@@ -325,19 +325,22 @@
                 <button class="btn btn--outline btn--sm" id="closeKanbanTaskModal">Закрыть</button>
             </div>
             <div class="modal__body">
-                <div class="form-group">
+                <div class="task-form-grid">
+                <div class="form-group task-field task-field--wide">
                     <label class="form-label">Название</label>
                     <input type="text" id="kanbanTaskTitle" class="form-control" />
                 </div>
-                <div class="form-group">
+                <div class="form-group task-field task-field--wide">
                     <label class="form-label">Описание</label>
-                    <textarea id="kanbanTaskDesc" class="form-control" rows="3"></textarea>
+                    <textarea id="kanbanTaskDesc" class="form-control" rows="6"></textarea>
+                    <div id="kanbanTaskDescPreview" style="margin-top:6px; font-size:12px; color:var(--color-text);"></div>
                 </div>
-                <div class="form-group">
+                <div class="form-group task-field task-field--wide">
                     <label class="form-label">Плановый результат</label>
-                    <textarea id="kanbanTaskExpected" class="form-control" rows="3"></textarea>
+                    <textarea id="kanbanTaskExpected" class="form-control" rows="6"></textarea>
+                    <div id="kanbanTaskExpectedPreview" style="margin-top:6px; font-size:12px; color:var(--color-text);"></div>
                 </div>
-                <div class="form-group">
+                <div class="form-group task-field task-field--rel">
                     <label class="form-label">Связанные навыки</label>
                     <div id="kanbanTaskRelated"></div>
                     <div id="kanbanTaskRelatedEdit" style="margin-top:8px; display:flex; flex-direction:column; gap:8px;">
@@ -348,13 +351,15 @@
                       </div>
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group task-field task-field--inline">
                     <label class="form-label">Длительность (мес.)</label>
                     <input type="number" id="kanbanTaskDuration" class="form-control" min="1" />
                 </div>
-                <div class="form-group">
+                <div class="form-group task-field task-field--wide">
                     <label class="form-label">Комментарий</label>
-                    <textarea id="kanbanTaskComment" class="form-control" rows="3" placeholder="Комментарии к выполнению..."></textarea>
+                    <textarea id="kanbanTaskComment" class="form-control" rows="4" placeholder="Комментарии к выполнению..."></textarea>
+                    <div id="kanbanTaskCommentPreview" style="margin-top:6px; font-size:12px; color:var(--color-text);"></div>
+                </div>
                 </div>
             </div>
             <div class="modal__footer">

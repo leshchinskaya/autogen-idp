@@ -155,6 +155,42 @@ function saveToLocalStorage() {
   }
 }
 
+// Глобальные утилиты рендера
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function linkify(text) {
+  if (!text) return '';
+  const safe = escapeHtml(text);
+  const urlRegex = /(?:https?:\/\/|www\.)[\w\-]+(\.[\w\-]+)+[\w\-\._~:\/?#\[\]@!$&'()*+,;=%]*/gi;
+  return safe.replace(urlRegex, (m) => {
+    const href = m.startsWith('http') ? m : `http://${m}`;
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${m}</a>`;
+  });
+}
+
+// Вернуть только кликабельные ссылки из текста (без остального текста)
+function linkifyLinksOnly(text) {
+  if (!text) return '';
+  const urlRegex = /(?:https?:\/\/|www\.)[\w\-]+(\.[\w\-]+)+[\w\-\._~:\/?#\[\]@!$&'()*+,;=%]*/gi;
+  const urls = (text.match(urlRegex) || []);
+  if (urls.length === 0) return '';
+  const unique = Array.from(new Set(urls));
+  return unique
+    .map((m) => {
+      const href = m.startsWith('http') ? m : `http://${m}`;
+      const safeText = escapeHtml(m);
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer">${safeText}</a>`;
+    })
+    .join(' ');
+}
+
 function loadFromLocalStorage() {
   try {
     const saved = localStorage.getItem('iprAppState');
@@ -720,6 +756,15 @@ function setupEventListeners() {
       if (e.target && e.target.hasAttribute('data-close-modal')) closeKanbanTaskModal();
     });
     saveKanbanBtn.addEventListener('click', saveKanbanTaskModal);
+    const d = document.getElementById('kanbanTaskDesc');
+    const e = document.getElementById('kanbanTaskExpected');
+    const c = document.getElementById('kanbanTaskComment');
+    const descPrev = document.getElementById('kanbanTaskDescPreview');
+    const expPrev = document.getElementById('kanbanTaskExpectedPreview');
+    const comPrev = document.getElementById('kanbanTaskCommentPreview');
+    if (d && descPrev) d.addEventListener('input', () => (descPrev.innerHTML = linkifyLinksOnly(d.value)));
+    if (e && expPrev) e.addEventListener('input', () => (expPrev.innerHTML = linkifyLinksOnly(e.value)));
+    if (c && comPrev) c.addEventListener('input', () => (comPrev.innerHTML = linkifyLinksOnly(c.value)));
   }
 }
 
@@ -1864,8 +1909,8 @@ function renderProgressTracking() {
                        onchange="toggleActivity('${skillId}', ${index})">
                 <div class="activity-info">
                   <h4 class="activity-name">${activity.name}</h4>
-                  ${activity.description ? `<div class="activity-desc">${activity.description}</div>` : ''}
-                  ${activity.expectedResult ? `<div class="activity-expected"><strong>Ожидаемый результат:</strong> ${activity.expectedResult}</div>` : ''}
+                  ${activity.description ? `<div class="activity-desc">${linkify(activity.description)}</div>` : ''}
+                  ${activity.expectedResult ? `<div class="activity-expected"><strong>Ожидаемый результат:</strong> ${linkify(activity.expectedResult)}</strong></div>` : ''}
                   ${(activity.relatedSkills && activity.relatedSkills.length) ? `<div class=\"activity-related\">Связанные навыки: ${activity.relatedSkills.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ')}</div>` : ''}
                   <div class="activity-meta">
                     <span>Уровень ${activity.level}</span>
@@ -1885,7 +1930,9 @@ function renderProgressTracking() {
                   </div>
                   <textarea class="form-control activity-comment" 
                            placeholder="Комментарии к выполнению..."
-                           onchange="updateActivityComment('${skillId}', ${index}, this.value)">${activity.comment}</textarea>
+                           onchange="updateActivityComment('${skillId}', ${index}, this.value)"
+                           oninput="document.getElementById('activityCommentPreview-${skillId}-${index}').innerHTML = linkifyLinksOnly(this.value)">${activity.comment}</textarea>
+                  <div class="activity-comment-preview" id="activityCommentPreview-${skillId}-${index}">${activity.comment ? linkifyLinksOnly(activity.comment) : ''}</div>
                 </div>
               </div>
             </div>
@@ -2067,6 +2114,12 @@ function openKanbanTaskModal(skillId, index) {
   document.getElementById('kanbanTaskDesc').value = activity.description || '';
   document.getElementById('kanbanTaskExpected').value = activity.expectedResult || '';
   document.getElementById('kanbanTaskComment').value = activity.comment || '';
+  const descPrev = document.getElementById('kanbanTaskDescPreview');
+  const expPrev = document.getElementById('kanbanTaskExpectedPreview');
+  const comPrev = document.getElementById('kanbanTaskCommentPreview');
+  if (descPrev) descPrev.innerHTML = activity.description ? linkifyLinksOnly(activity.description) : '';
+  if (expPrev) expPrev.innerHTML = activity.expectedResult ? linkifyLinksOnly(activity.expectedResult) : '';
+  if (comPrev) comPrev.innerHTML = activity.comment ? linkifyLinksOnly(activity.comment) : '';
   const dur = document.getElementById('kanbanTaskDuration');
   if (dur) dur.value = activity.duration || 1;
   const relatedWrap = document.getElementById('kanbanTaskRelated');
@@ -2083,10 +2136,16 @@ function openKanbanTaskModal(skillId, index) {
     // чекбоксы по навыкам, присутствующим в плане (кроме текущего primary)
     const allPlanSkills = Object.entries(appState.progress || {}).map(([id, p]) => ({ id, name: p.name }));
     const relSet = new Set(activity.relatedSkills || []);
-    checksWrap.innerHTML = allPlanSkills
-      .filter(s => s.id !== skillId)
-      .map(s => `<label class="checkbox"><input type="checkbox" data-rel-id="${s.id}" ${relSet.has(s.id) ? 'checked' : ''}> <span>${s.name}</span></label>`)
-      .join('');
+    checksWrap.innerHTML = `
+      <details>
+        <summary style="cursor:pointer;color:var(--color-text-secondary);">Связанные навыки (показать/скрыть)</summary>
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:6px; margin-top:6px;">
+          ${allPlanSkills
+            .filter(s => s.id !== skillId)
+            .map(s => `<label class="checkbox"><input type="checkbox" data-rel-id="${s.id}" ${relSet.has(s.id) ? 'checked' : ''}> <span>${s.name}</span></label>`)
+            .join('')}
+        </div>
+      </details>`;
     checksWrap.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.addEventListener('change', () => {
         const id = cb.getAttribute('data-rel-id');
@@ -2123,7 +2182,8 @@ function openKanbanTaskModal(skillId, index) {
         const rel = activity.relatedSkills || [];
         relatedWrap.innerHTML = rel.length ? rel.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ') : '<span class="text-secondary">Нет</span>';
         // обновить чекбоксы (добавилось новое значение)
-        checksWrap.innerHTML += `<label class=\"checkbox\"><input type=\"checkbox\" data-rel-id=\"${id}\" checked> <span>${getPlanSkillName(id)}</span></label>`;
+        const details = checksWrap.querySelector('details > div');
+        if (details) details.innerHTML += `<label class=\"checkbox\"><input type=\"checkbox\" data-rel-id=\"${id}\" checked> <span>${getPlanSkillName(id)}</span></label>`;
         // пересчитать дропдаун (убрать добавленный)
         addSelect.querySelector(`option[value="${id}"]`)?.remove();
         addSelect.value = '';
