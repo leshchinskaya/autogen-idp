@@ -302,6 +302,7 @@ function setupEventListeners() {
   const infoBtn = document.getElementById('infoBtn');
   const quickLoadOpenBtn = document.getElementById('quickLoadOpenBtn');
   const quickImportCSVBtn = document.getElementById('quickImportCSVBtn');
+  const homeLink = document.getElementById('homeLink');
   
   if (createNewBtn) {
     createNewBtn.addEventListener('click', function() {
@@ -332,6 +333,11 @@ function setupEventListeners() {
   }
   if (infoBtn) {
     infoBtn.addEventListener('click', () => toggleInfoModal(true));
+  }
+  if (homeLink) {
+    homeLink.addEventListener('click', () => {
+      showSection('welcomeSection');
+    });
   }
   if (quickLoadOpenBtn) {
     quickLoadOpenBtn.addEventListener('click', () => toggleQuickLoadModal(true));
