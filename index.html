@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One More Task</title>
+        <link rel="icon" type="image/png" href="logo.png">
+        <link rel="shortcut icon" type="image/png" href="logo.png">
+        <link rel="apple-touch-icon" href="logo.png">
+        <meta name="theme-color" content="#20a6b2">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="container">
+                <div class="flex items-center justify-between">
+                    <h1 class="logo">Сегодня выполнена еще одна крутая задача</h1>
+                    <nav class="nav-links">
+                        <button class="btn btn--outline btn--sm" id="darkModeToggle">🌙 Тёмная тема</button>
+                    </nav>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="container">
+                
+                <!-- Welcome Section -->
+                <section id="welcomeSection" class="section active">
+                    <div class="welcome-container">
+                        <div class="welcome-card card">
+                            <div class="card__body">
+                                <h2>Добро пожаловать в генератор ИПР</h2>
+                                <p>Создайте индивидуальный план развития для достижения ваших профессиональных целей</p>
+                                <img src="Sora One More Task Logo.png" alt="One More Task" class="welcome-logo" />
+                                <div class="action-buttons">
+                                    <button class="btn btn--primary btn--lg" id="createNewPlan">Создать новый ИПР</button>
+                                    <button class="btn btn--secondary btn--lg" id="continuePlan" style="display: none;">Продолжить существующий</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Profile Section -->
+                <section id="profileSection" class="section">
+                    <div class="progress-bar">
+                        <div class="progress-step active">Профиль и контекст</div>
+                        <div class="progress-step">Выбор навыков</div>
+                        <div class="progress-step">План развития</div>
+                        <div class="progress-step">Прогресс</div>
+                        <div class="progress-step">Анализ развития</div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card__header">
+                            <h2>Профиль сотрудника</h2>
+                        </div>
+                        <div class="card__body">
+                                <div class="status status--info" style="margin-bottom:12px;">Заполни информацию наиболее корректно и полно, она влияет на контекст для автогенерации задач</div>
+                            <form id="profileForm">
+                                <div class="form-group">
+                                    <label class="form-label">ФИО</label>
+                                    <input type="text" class="form-control" id="fullName" placeholder="Иванов Иван" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Должность и контекст о сотруднике</label>
+                                    <input type="text" class="form-control" id="position" placeholder="Например: QA Engineer в финтехе; стек, особенности проекта, домен" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Текущий грейд</label>
+                                    <select class="form-control" id="grade" required>
+                                        <option value="">Выберите грейд</option>
+                                        <option value="junior">Junior</option>
+                                        <option value="middle">Middle</option>
+                                        <option value="senior">Senior</option>
+                                        <option value="lead">Lead</option>
+                                    </select>
+                                </div>
+                                 <div class="form-group">
+                                     <label class="form-label">Направление (QA)</label>
+                                     <input type="text" class="form-control" id="track" placeholder="Например: QA Auto, QA Backend, QA Web..." required />
+                                 </div>
+                                <button type="submit" class="btn btn--primary">К выбору навыков</button>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Skills Section -->
+                <section id="skillsSection" class="section">
+                    <div class="progress-bar">
+                        <div class="progress-step completed">Профиль и контекст</div>
+                        <div class="progress-step active">Выбор навыков</div>
+                        <div class="progress-step">План развития</div>
+                        <div class="progress-step">Прогресс</div>
+                        <div class="progress-step">Анализ развития</div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card__header">
+                            <h2>Выбери навыки для развития</h2>
+                        </div>
+                        <div class="card__body">
+                            <div class="status status--info" style="margin-bottom:12px;">Выбери те навыки, которые бы хотелось развивать и переходи к Созданию ИПР. Укажите текущий и желаемый уровни для каждого навыка</div>
+                            
+                            <div id="skillsCsvHelper" class="form-group" style="display:none; margin: 12px 0;">
+                                <label class="form-label">Загрузите CSV с навыками</label>
+                                <input type="file" id="skillsCsvFile" accept=".csv" class="form-control" />
+                            </div>
+
+                            <div class="skills-toolbar form-actions--sticky">
+                                <div class="form-group" style="margin:0; flex: 1;">
+                                    <label class="form-label">Поиск навыков</label>
+                                    <input type="text" id="skillsSearch" class="form-control" placeholder="Начните вводить название навыка..." />
+                                </div>
+                                <div class="skills-actions" style="align-items: center;">
+                                    <label class="form-label" style="margin:0; display:flex; align-items:center; gap:8px;">
+                                        <input type="checkbox" id="showOnlySelected" /> Только выбранные
+                                    </label>
+                                    <span id="selectedCounter" class="counter-badge">Выбрано: 0</span>
+                                    <button class="btn btn--outline" id="backToProfile">Назад</button>
+                                    <button class="btn btn--primary" id="generatePlan">Создать план развития</button>
+                                </div>
+                            </div>
+
+                            <div class="skills-categories"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Plan Section -->
+                <section id="planSection" class="section">
+                    <div class="progress-bar">
+                        <div class="progress-step completed">Профиль и контекст</div>
+                        <div class="progress-step completed">Выбор навыков</div>
+                        <div class="progress-step active">План развития</div>
+                        <div class="progress-step">Прогресс</div>
+                        <div class="progress-step">Анализ развития</div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card__header">
+                            <div class="flex items-center justify-between">
+                                <h2>Индивидуальный план развития</h2>
+                                <div class="export-buttons">
+                                    <button class="btn btn--outline btn--sm" id="generatePromptBtn">🧠 Промт: автоген ИПР</button>
+                                    <button class="btn btn--outline btn--sm" id="importJsonBtn">⬆️ Импорт из JSON</button>
+                                    <button class="btn btn--outline btn--sm" id="exportPDF">📄 PDF</button>
+                                    <button class="btn btn--outline btn--sm" id="exportCSV">📊 CSV</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card__body">
+                                <div class="status status--info" style="margin-bottom:12px;">
+                                  <div>Сгенерируй промт для ИПР по кнопке. Получи результат промта в виде JSON с помощью любого ИИ. Импортни JSON по кнопке. Самостоятельно или с помощью Ментора скорректируй описание задач и время их выполнения. И переходи к выполнению ИПР</div>
+                                </div>
+                            <div id="planContent" class="plan-content"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Progress Section -->
+                <section id="progressSection" class="section">
+                    <div class="progress-bar">
+                        <div class="progress-step">Профиль и контекст</div>
+                        <div class="progress-step">Выбор навыков</div>
+                        <div class="progress-step">План развития</div>
+                        <div class="progress-step active">Прогресс</div>
+                        <div class="progress-step">Анализ развития</div>
+                    </div>
+                    
+                    <div class="progress-dashboard">
+                         <div class="status status--info" style="margin-bottom:12px;">Отмечай выполненные задачи, оставляй комментарии к выполнению. Чтобы получить итог прогресса — сгенерируй промт по кнопке и с помощью любого ИИ получи саммари</div>
+                        <div class="dashboard-stats">
+                            <div class="stat-card card">
+                                <div class="card__body">
+                                    <h3>Общий прогресс</h3>
+                                    <div class="progress-chart-container" style="height: 200px; position: relative;">
+                                        <canvas id="overallProgressChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="stat-card card">
+                                <div class="card__body">
+                                    <h3>Прогресс по категориям</h3>
+                                    <div class="progress-chart-container" style="height: 200px; position: relative;">
+                                        <canvas id="categoryProgressChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="relatedSkillsSummary" style="margin-top:16px;"></div>
+                        <div class="tabs-bar">
+                          <div class="tabs">
+                            <button class="tab active" id="progressTabBoard">Доска</button>
+                            <button class="tab" id="progressTabList">Список</button>
+                            <button class="tab" id="progressTabAnalysis">Анализ развития</button>
+                          </div>
+                          <div class="export-buttons">
+                            <button class="btn btn--outline btn--sm" id="generateProgressPromptBtn">🧠 Промт: автоген Итога прогресса</button>
+                            <button class="btn btn--outline btn--sm" id="exportCSVProgress">📊 CSV</button>
+                            <button class="btn btn--outline btn--sm" id="importCSVProgressBtn">⬆️ Обработать другой ИПР</button>
+                          </div>
+                        </div>
+                        <input type="file" id="importCSVProgressFile" accept=".csv" style="display:none;" />
+
+                        <div id="progressPanelBoard" class="tab-panel active">
+                          <div class="card">
+                              <div class="card__header">
+                                  <h2>Задачи для развития</h2>
+                              </div>
+                              <div class="card__body">
+                                  <div id="progressKanban" class="kanban-board"></div>
+                              </div>
+                          </div>
+                        </div>
+
+                        <div id="progressPanelList" class="tab-panel">
+                          <div class="card" style="margin-top: 16px;">
+                              <div class="card__header">
+                                  <h2>Отслеживание выполнения</h2>
+                              </div>
+                              <div class="card__body">
+                                  <div id="progressTracking" class="progress-tracking"></div>
+                              </div>
+                          </div>
+                        </div>
+
+                        <div id="progressPanelAnalysis" class="tab-panel">
+                          <div class="card" style="margin-top: 16px;">
+                            <div class="card__header">
+                              <h2>Анализ плана</h2>
+                            </div>
+                            <div class="card__body">
+                              <div class="status status--info" style="margin-bottom:12px;">Здесь отражается аналитика по текущему плану и выбранным навыкам.</div>
+                              <div class="analysis-controls" style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
+                                <select id="planAnalysisSkillSelect" class="form-control" style="max-width: 320px;">
+                                  <option value="">Выберите навык для детального графика</option>
+                                </select>
+                              </div>
+                              <div class="analysis-grid">
+                                <div>
+                                  <h3 class="m-0 mb-8">Текущий vs целевой уровень</h3>
+                                  <div style="height:260px; position:relative;"><canvas id="planAnalysisLevelsChart"></canvas></div>
+                                </div>
+                                <div>
+                                  <h3 class="m-0 mb-8">Топ по приросту уровня</h3>
+                                  <div style="height:260px; position:relative;"><canvas id="planAnalysisTopGrowth"></canvas></div>
+                                </div>
+                              </div>
+                              <div style="margin-top:16px;">
+                                <h3 class="m-0 mb-8">Кривая развития выбранного навыка</h3>
+                                <div style="height:280px; position:relative;"><canvas id="planAnalysisSkillCurve"></canvas></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Growth Analysis (Global) Section -->
+                <section id="growthAnalysisSection" class="section">
+                    <div class="progress-bar">
+                        <div class="progress-step">Профиль и контекст</div>
+                        <div class="progress-step">Выбор навыков</div>
+                        <div class="progress-step">План развития</div>
+                        <div class="progress-step">Прогресс</div>
+                        <div class="progress-step active">Анализ развития</div>
+                    </div>
+
+                    <div class="card">
+                      <div class="card__header">
+                        <h2>Анализ развития</h2>
+                      </div>
+                      <div class="card__body">
+                        <div class="analysis-controls" style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
+                          <input type="file" id="analysisCsvFile" accept=".csv" class="form-control" style="max-width: 420px;" />
+                          <div id="analysisSelectWrap" style="display:none; max-width: 320px; width: 100%;">
+                            <select id="analysisSkillSelect" class="form-control">
+                              <option value="">Выберите навык для детального графика</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div id="analysisStatus" class="status status--warning" style="margin-bottom:12px;">Загрузите CSV файл "Динамика роста"</div>
+                        <div id="analysisCharts" style="display:none;">
+                          <div class="analysis-grid">
+                            <div>
+                              <h3 class="m-0 mb-8">Средний уровень по датам</h3>
+                              <div style="height:260px; position:relative;"><canvas id="analysisAvgChart"></canvas></div>
+                            </div>
+                            <div>
+                              <h3 class="m-0 mb-8">Топ рост навыков</h3>
+                              <div style="height:260px; position:relative;"><canvas id="analysisTopImproved"></canvas></div>
+                            </div>
+                          </div>
+                          <div style="margin-top:16px;">
+                            <h3 class="m-0 mb-8">Кривая развития выбранного навыка</h3>
+                            <div style="height:280px; position:relative;"><canvas id="analysisSkillChart"></canvas></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Kanban Task Modal -->
+    <div id="kanbanTaskModal" class="modal" aria-hidden="true" style="display:none;">
+        <div class="modal__overlay" data-close-modal></div>
+        <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="kanbanTaskModalTitle">
+            <div class="modal__header">
+                <h3 id="kanbanTaskModalTitle">Детали задачи</h3>
+                <button class="btn btn--outline btn--sm" id="closeKanbanTaskModal">Закрыть</button>
+            </div>
+            <div class="modal__body">
+                <div class="form-group">
+                    <label class="form-label">Название</label>
+                    <input type="text" id="kanbanTaskTitle" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Описание</label>
+                    <textarea id="kanbanTaskDesc" class="form-control" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Плановый результат</label>
+                    <textarea id="kanbanTaskExpected" class="form-control" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Связанные навыки</label>
+                    <div id="kanbanTaskRelated"></div>
+                    <div id="kanbanTaskRelatedEdit" style="margin-top:8px; display:flex; flex-direction:column; gap:8px;">
+                      <div id="kanbanTaskRelatedCheckboxes" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:6px;"></div>
+                      <div style="display:flex; gap:8px; align-items:center;">
+                        <select id="kanbanTaskRelatedAddSelect" class="form-control" style="max-width:360px;"></select>
+                        <button type="button" class="btn btn--outline btn--sm" id="kanbanTaskRelatedAddBtn">Добавить</button>
+                      </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Длительность (мес.)</label>
+                    <input type="number" id="kanbanTaskDuration" class="form-control" min="1" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Комментарий</label>
+                    <textarea id="kanbanTaskComment" class="form-control" rows="3" placeholder="Комментарии к выполнению..."></textarea>
+                </div>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--primary" id="saveKanbanTaskBtn">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prompt Modal -->
+    <div id="promptModal" class="modal" aria-hidden="true" style="display:none;">
+        <div class="modal__overlay" data-close-modal></div>
+        <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
+            <div class="modal__header">
+                <h3 id="promptModalTitle">Промт для генерации задач ИПР</h3>
+                <button class="btn btn--outline btn--sm" id="closePromptModal">Закрыть</button>
+            </div>
+            <div class="modal__body">
+                <textarea id="promptTextArea" class="form-control" style="min-height: 280px; resize: vertical;"></textarea>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--primary" id="copyPromptBtn">Скопировать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import JSON Modal -->
+    <div id="importModal" class="modal" aria-hidden="true" style="display:none;">
+        <div class="modal__overlay" data-close-modal></div>
+        <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
+            <div class="modal__header">
+                <h3 id="importModalTitle">Импорт задач из JSON</h3>
+                <button class="btn btn--outline btn--sm" id="closeImportModal">Закрыть</button>
+            </div>
+            <div class="modal__body">
+                <p style="margin-bottom:8px;color:var(--color-text-secondary);font-size:12px;">Вставьте JSON согласно схеме из промта. Задачи для совпадающих по названию навыков заменят текущие.</p>
+                <textarea id="importTextArea" class="form-control" style="min-height: 280px; resize: vertical;"></textarea>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--primary" id="importJsonConfirmBtn">Импортировать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Summary Prompt Modal -->
+    <div id="progressPromptModal" class="modal" aria-hidden="true" style="display:none;">
+        <div class="modal__overlay" data-close-modal></div>
+        <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="progressPromptModalTitle">
+            <div class="modal__header">
+                <h3 id="progressPromptModalTitle">Промт: краткий итог прогресса</h3>
+                <button class="btn btn--outline btn--sm" id="closeProgressPromptModal">Закрыть</button>
+            </div>
+            <div class="modal__body">
+                <textarea id="progressPromptTextArea" class="form-control" style="min-height: 240px; resize: vertical;"></textarea>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--primary" id="copyProgressPromptBtn">Скопировать</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
