@@ -43,6 +43,8 @@
                                 <div class="action-buttons">
                                     <button class="btn btn--primary btn--lg" id="createNewPlan">Создать новый ИПР</button>
                                     <button class="btn btn--secondary btn--lg" id="continuePlan" style="display: none;">Продолжить существующий</button>
+                                    <button class="btn btn--outline btn--lg" id="quickLoadOpenBtn">Загрузить ИПР по ID</button>
+                                    <button class="btn btn--outline btn--lg" id="quickImportCSVBtn">Загрузить CSV ИПР</button>
                                 </div>
                             </div>
                         </div>
@@ -128,6 +130,7 @@
                                     <span id="selectedCounter" class="counter-badge">Выбрано: 0</span>
                                     <button class="btn btn--outline" id="backToProfile">Назад</button>
                                     <button class="btn btn--primary" id="generatePlan">Создать план развития</button>
+                                     <button class="btn btn--secondary" id="appendToPlan" style="display:none;">Добавить в текущий план</button>
                                 </div>
                             </div>
 
@@ -178,7 +181,26 @@
                     </div>
                     
                     <div class="progress-dashboard">
-                         <div class="status status--info" style="margin-bottom:12px;">Отмечай выполненные задачи, оставляй комментарии к выполнению. Чтобы получить итог прогресса — сгенерируй промт по кнопке и с помощью любого ИИ получи саммари</div>
+                         <div class="card" id="inlineCloudPanel" style="margin-top:8px;">
+                           <div class="card__body">
+                              <div style="display:grid; gap:12px;">
+                                <div class="inline-cloud-row">
+                                  <div class="form-group inline-cloud-title" style="margin:0;">
+                                    <input type="text" id="inlineCloudPlanTitleInput" class="form-control" placeholder="Название ИПР (например: ИПР — Петров П., QA Auto (Q4))" />
+                                  </div>
+                                </div>
+                                <div class="inline-cloud-status-row">
+                                  <div class="status status--info" style="margin:0;">Сохраняется весь текущий план/прогресс.
+                                    <span id="inlineCloudCurrentRecord" style="margin-left:6px; font-size:12px; color:var(--color-text-secondary);"></span>
+                                  </div>
+                                  <div class="inline-cloud-actions">
+                                    <button class="btn btn--secondary btn--sm" id="inlineCloudSaveNewBtn">Сохранить как новый</button>
+                                    <button class="btn btn--success btn--sm" id="inlineCloudUpdateBtn">Обновить текущий</button>
+                                  </div>
+                                </div>
+                              </div>
+                           </div>
+                         </div>
                         <div class="dashboard-stats">
                             <div class="stat-card card">
                                 <div class="card__body">
@@ -199,6 +221,7 @@
                             </div>
                         </div>
                         <div id="relatedSkillsSummary" style="margin-top:16px;"></div>
+                        <div class="status status--info" style="margin:12px 0;">Отмечай выполненные задачи, оставляй комментарии к выполнению. Чтобы получить итог прогресса — сгенерируй промт по кнопке и с помощью любого ИИ получи саммари</div>
                         <div class="tabs-bar">
                           <div class="tabs">
                             <button class="tab active" id="progressTabBoard">Доска</button>
@@ -207,8 +230,7 @@
                           </div>
                           <div class="export-buttons">
                             <button class="btn btn--outline btn--sm" id="generateProgressPromptBtn">🧠 Промт: автоген Итога прогресса</button>
-                            <button class="btn btn--outline btn--sm" id="exportCSVProgress">📊 CSV</button>
-                            <button class="btn btn--outline btn--sm" id="importCSVProgressBtn">⬆️ Обработать другой ИПР</button>
+                              <button class="btn btn--outline btn--sm" id="exportCSVProgress">📊 CSV</button>
                              <button class="btn btn--outline btn--sm" id="cloudQuickSaveBtn">💾 Save</button>
                             <button class="btn btn--outline btn--sm" id="cloudSyncBtn">☁️ Sheets</button>
                           </div>
@@ -325,7 +347,8 @@
                 <button class="btn btn--outline btn--sm" id="closeKanbanTaskModal">Закрыть</button>
             </div>
             <div class="modal__body">
-                <div class="task-form-grid">
+                <div id="kanbanTaskViewSection" style="display:block;"></div>
+                <div id="kanbanTaskEditSection" class="task-form-grid" style="display:none;">
                 <div class="form-group task-field task-field--wide">
                     <label class="form-label">Название</label>
                     <input type="text" id="kanbanTaskTitle" class="form-control" />
@@ -352,7 +375,7 @@
                     </div>
                 </div>
                 <div class="form-group task-field task-field--inline">
-                    <label class="form-label">Длительность (мес.)</label>
+                    <label class="form-label">Длительность (нед.)</label>
                     <input type="number" id="kanbanTaskDuration" class="form-control" min="1" />
                 </div>
                 <div class="form-group task-field task-field--wide">
@@ -363,7 +386,10 @@
                 </div>
             </div>
             <div class="modal__footer">
-                <button class="btn btn--primary" id="saveKanbanTaskBtn">Сохранить</button>
+                <div style="display:flex; gap:8px; justify-content:flex-end; width:100%;">
+                  <button class="btn btn--outline" id="editKanbanTaskBtn">Редактировать</button>
+                  <button class="btn btn--primary" id="saveKanbanTaskBtn" style="display:none;">Сохранить</button>
+                </div>
             </div>
         </div>
     </div>
@@ -480,6 +506,27 @@
             <div><strong>Итог прогресса</strong>: Автоген промта для краткого саммари прогресса.</div>
             <div><strong>Аналитика</strong>: Графики по текущему плану и по истории роста (при наличии CSV).</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Load by ID Modal -->
+    <div id="quickLoadModal" class="modal" aria-hidden="true" style="display:none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="quickLoadModalTitle">
+        <div class="modal__header">
+          <h3 id="quickLoadModalTitle">Загрузить ИПР по ID</h3>
+          <button class="btn btn--outline btn--sm" id="closeQuickLoadModal">Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <div class="form-group">
+            <label class="form-label">ID записи</label>
+            <input type="text" id="quickLoadIdInput" class="form-control" placeholder="Вставьте ID (например: fa1950ef-...)" />
+          </div>
+          <div class="form-actions" style="justify-content:flex-end; gap:8px;">
+            <button class="btn btn--primary btn--sm" id="quickLoadConfirmBtn">Загрузить</button>
+          </div>
+          <div id="quickLoadStatus" style="margin-top:8px; font-size:12px; color:var(--color-text-secondary);"></div>
         </div>
       </div>
     </div>

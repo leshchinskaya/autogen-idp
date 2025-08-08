@@ -461,6 +461,14 @@ pre code {
   border-radius: var(--radius-md);
 }
 
+/* Success button variant */
+.btn--success {
+  background: var(--color-success);
+  color: var(--color-btn-primary-text);
+}
+.btn--success:hover { background: var(--color-primary-hover); }
+.btn--success:active { background: var(--color-primary-active); }
+
 .btn--full-width {
   width: 100%;
 }
@@ -817,7 +825,7 @@ select.form-control {
 
 /* Приветственная страница */
 .welcome-container {
-  max-width: 600px;
+  max-width: 840px;
   margin: 0 auto;
   text-align: center;
 }
@@ -846,16 +854,22 @@ select.form-control {
 }
 
 .action-buttons {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: var(--space-16);
-  align-items: center;
+  align-items: stretch;
+}
+
+.action-buttons .btn {
+  width: 100%;
+  white-space: normal;
+  text-align: center;
 }
 
 @media (min-width: 768px) {
   .action-buttons {
-    flex-direction: row;
-    justify-content: center;
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+    justify-items: center;
   }
 }
 
@@ -1105,6 +1119,33 @@ select.form-control {
   gap: var(--space-8);
 }
 
+.inline-cloud-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.inline-cloud-title { flex: 1 1 auto; width: 100%; max-width: none; }
+.inline-cloud-title input.form-control {
+  font-size: var(--font-size-xl);
+}
+.inline-cloud-actions {
+  display: flex;
+  gap: 8px;
+}
+.inline-cloud-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .inline-cloud-status-row { flex-direction: column; align-items: stretch; }
+}
+@media (max-width: 720px) {
+  .inline-cloud-row { flex-direction: column; align-items: stretch; }
+  .inline-cloud-actions { justify-content: flex-end; }
+}
+
 /* Tabs */
 .tabs { display: flex; gap: var(--space-8); margin-top: var(--space-8); }
 .tab {
@@ -1319,12 +1360,14 @@ select.form-control {
   line-height: 1.6;
   color: var(--color-text);
   margin-bottom: var(--space-8);
+  white-space: pre-line;
 }
 
 .activity-related {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  white-space: normal;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
   margin-bottom: var(--space-8);

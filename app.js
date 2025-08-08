@@ -1,4 +1,6 @@
 // Источник навыков теперь берётся из CSV (HardSkills Review QA 4.0.csv)
+// Глобальный URL Apps Script (Cloud Sync)
+const CLOUD_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwqOobmbWA97CN7cJUQ6sQ8pO63ITTVqEhrhkLA-90pzjfIlRTbUmaXPQF1oerLmxxnfA/exec';
 let skillsData = { skills: {} };
 
 // Вспомогательные функции для CSV → модель приложения
@@ -222,8 +224,8 @@ function showSection(sectionId) {
 
 function getDurationForLevel(currentLevel, targetLevel) {
   const levelDiff = targetLevel - currentLevel;
-  const baseDuration = 2; // базовая длительность в месяцах
-  return Math.ceil(baseDuration * levelDiff);
+  const baseDurationWeeks = 8; // базовая длительность в неделях
+  return Math.ceil(baseDurationWeeks * levelDiff);
 }
 
 // Инициализация приложения
@@ -298,6 +300,8 @@ function setupEventListeners() {
   const continueBtn = document.getElementById('continuePlan');
   const themeBtn = document.getElementById('darkModeToggle');
   const infoBtn = document.getElementById('infoBtn');
+  const quickLoadOpenBtn = document.getElementById('quickLoadOpenBtn');
+  const quickImportCSVBtn = document.getElementById('quickImportCSVBtn');
   
   if (createNewBtn) {
     createNewBtn.addEventListener('click', function() {
@@ -329,6 +333,18 @@ function setupEventListeners() {
   if (infoBtn) {
     infoBtn.addEventListener('click', () => toggleInfoModal(true));
   }
+  if (quickLoadOpenBtn) {
+    quickLoadOpenBtn.addEventListener('click', () => toggleQuickLoadModal(true));
+  }
+  if (quickImportCSVBtn) {
+    quickImportCSVBtn.addEventListener('click', () => {
+      const fileInput = document.getElementById('importCSVProgressFile');
+      if (fileInput) fileInput.click();
+      // После выбора файла обработчик handleImportProgressCSV уже сработает и перерендерит прогресс
+      // Переключим вкладку на Прогресс
+      showSection('progressSection');
+    });
+  }
 
   // Профиль
   const profileForm = document.getElementById('profileForm');
@@ -344,8 +360,12 @@ function setupEventListeners() {
   // Навыки
   const generatePlanBtn = document.getElementById('generatePlan');
   const generatePromptBtn = document.getElementById('generatePromptBtn');
+  const appendToPlanBtn = document.getElementById('appendToPlan');
   if (generatePlanBtn) {
     generatePlanBtn.addEventListener('click', handleGeneratePlan);
+  }
+  if (appendToPlanBtn) {
+    appendToPlanBtn.addEventListener('click', handleAppendToPlan);
   }
   if (generatePromptBtn) {
     generatePromptBtn.addEventListener('click', handleGeneratePrompt);
@@ -360,7 +380,12 @@ function setupEventListeners() {
   const startProgressBtn = document.getElementById('startProgress');
   if (startProgressBtn) {
     startProgressBtn.addEventListener('click', function() {
-      initializeProgress();
+      // Если прогресс уже есть, не стирать — лишь добавить/синхронизировать новые задачи из плана
+      if (appState.progress && Object.keys(appState.progress).length > 0) {
+        mergePlanIntoProgress();
+      } else {
+        initializeProgress();
+      }
       showSection('progressSection');
       renderProgress();
     });
@@ -369,10 +394,13 @@ function setupEventListeners() {
   const exportPDFBtn = document.getElementById('exportPDF');
   const exportCSVBtn = document.getElementById('exportCSV');
   const exportCSVProgressBtn = document.getElementById('exportCSVProgress');
-  const importCSVProgressBtn = document.getElementById('importCSVProgressBtn');
   const importCSVProgressFile = document.getElementById('importCSVProgressFile');
   const cloudSyncBtn = document.getElementById('cloudSyncBtn');
   const cloudQuickSaveBtn = document.getElementById('cloudQuickSaveBtn');
+  const inlineCloudTitle = document.getElementById('inlineCloudPlanTitleInput');
+  const inlineCloudSaveNewBtn = document.getElementById('inlineCloudSaveNewBtn');
+  const inlineCloudUpdateBtn = document.getElementById('inlineCloudUpdateBtn');
+  const inlineCloudCurrentRecord = document.getElementById('inlineCloudCurrentRecord');
   const analysisCsvFile = document.getElementById('analysisCsvFile');
   const analysisSkillSelect = document.getElementById('analysisSkillSelect');
   const planAnalysisSkillSelect = document.getElementById('planAnalysisSkillSelect');
@@ -391,8 +419,7 @@ function setupEventListeners() {
   if (exportCSVProgressBtn) {
     exportCSVProgressBtn.addEventListener('click', exportProgressToCSV);
   }
-  if (importCSVProgressBtn && importCSVProgressFile) {
-    importCSVProgressBtn.addEventListener('click', () => importCSVProgressFile.click());
+  if (importCSVProgressFile) {
     importCSVProgressFile.addEventListener('change', handleImportProgressCSV);
   }
   if (analysisCsvFile) {
@@ -595,10 +622,16 @@ function setupEventListeners() {
         if (!row.payload) { setLog('Пустой payload'); return; }
         appState = row.payload; saveToLocalStorage();
         renderSkills(); renderPlan(); renderProgress();
+        showSection('progressSection');
         appState.ui = appState.ui || {}; appState.ui.cloudRecordId = id; saveToLocalStorage();
         if (cloudCurrentRecord) cloudCurrentRecord.textContent = `Текущая запись: ${id}`;
         if (cloudCurrentRecordInline) cloudCurrentRecordInline.textContent = `id = ${id}`;
         try { populateProfileFormFromState(); } catch (_) {}
+        // Закрыть окно Sheets после успешной загрузки
+        try {
+          cloudModal.style.display = 'none';
+          cloudModal.setAttribute('aria-hidden', 'true');
+        } catch (_) {}
         setLog('Загружено');
       } catch (e) { setLog('Ошибка сети: ' + String(e)); }
       finally { setLoading(false); }
@@ -636,6 +669,18 @@ function setupEventListeners() {
       if (e.target && e.target.hasAttribute('data-close-modal')) toggleInfoModal(false);
     });
   }
+
+  // Quick load modal controls
+  const quickLoadModal = document.getElementById('quickLoadModal');
+  const closeQuickLoadModalBtn = document.getElementById('closeQuickLoadModal');
+  const quickLoadConfirmBtn = document.getElementById('quickLoadConfirmBtn');
+  if (quickLoadModal && closeQuickLoadModalBtn && quickLoadConfirmBtn) {
+    closeQuickLoadModalBtn.addEventListener('click', () => toggleQuickLoadModal(false));
+    quickLoadModal.addEventListener('click', (e) => {
+      if (e.target && e.target.hasAttribute('data-close-modal')) toggleQuickLoadModal(false);
+    });
+    quickLoadConfirmBtn.addEventListener('click', quickLoadByIdFromHeader);
+  }
   const promptModal = document.getElementById('promptModal');
   const closePromptModalBtn = document.getElementById('closePromptModal');
   if (promptModal && closePromptModalBtn) {
@@ -672,6 +717,12 @@ function setupEventListeners() {
 
   // Счётчик выбранных — обновляем на первой загрузке
   updateSelectedCounter();
+  // Показать кнопку "Добавить в текущий план", если уже есть план
+  try {
+    if (Object.keys(appState.developmentPlan || {}).length > 0 && appendToPlanBtn) {
+      appendToPlanBtn.style.display = 'inline-flex';
+    }
+  } catch (_) {}
 
   // Progress summary prompt modal controls
   const genProgPromptBtn = document.getElementById('generateProgressPromptBtn');
@@ -707,6 +758,72 @@ function setupEventListeners() {
       document.execCommand('copy');
       copyProgressPromptBtn.textContent = 'Скопировано';
       setTimeout(() => (copyProgressPromptBtn.textContent = 'Скопировать'), 1500);
+    });
+  }
+
+  // Inline cloud panel setup
+  if (inlineCloudTitle && inlineCloudSaveNewBtn && inlineCloudUpdateBtn) {
+    // Инициализация значений
+    inlineCloudTitle.value = appState.ui?.cloudPlanTitle || '';
+    if (inlineCloudCurrentRecord) inlineCloudCurrentRecord.textContent = appState.ui?.cloudRecordId ? `id = ${appState.ui.cloudRecordId}` : '';
+    inlineCloudTitle.addEventListener('input', () => {
+      const v = inlineCloudTitle.value.trim();
+      if (v) { appState.ui = appState.ui || {}; appState.ui.cloudPlanTitle = v; saveToLocalStorage(); }
+    });
+    inlineCloudSaveNewBtn.addEventListener('click', async () => {
+      try {
+        inlineCloudSaveNewBtn.disabled = true;
+        inlineCloudSaveNewBtn.textContent = 'Сохраняем…';
+        const form = new URLSearchParams();
+        form.set('action', 'append');
+        const payload = { ...appState };
+        const titleVal = (inlineCloudTitle.value || '').trim();
+        if (titleVal) { payload.title = titleVal; payload.nameidp = titleVal; form.set('nameidp', titleVal); appState.ui.cloudPlanTitle = titleVal; saveToLocalStorage(); }
+        form.set('payload', JSON.stringify(payload));
+        const res = await fetch(CLOUD_APPS_SCRIPT_URL, { method: 'POST', body: form });
+        const json = await res.json();
+        if (json.ok && json.id) {
+          appState.ui = appState.ui || {}; appState.ui.cloudRecordId = json.id; saveToLocalStorage();
+          if (inlineCloudCurrentRecord) inlineCloudCurrentRecord.textContent = `id = ${json.id}`;
+          inlineCloudSaveNewBtn.textContent = '✅ Сохранено';
+        } else {
+          inlineCloudSaveNewBtn.textContent = 'Ошибка';
+          alert('Ошибка: ' + JSON.stringify(json));
+        }
+      } catch (e) {
+        inlineCloudSaveNewBtn.textContent = 'Ошибка сети';
+        alert('Ошибка сети: ' + String(e));
+      } finally {
+        setTimeout(() => (inlineCloudSaveNewBtn.textContent = 'Сохранить как новую запись', inlineCloudSaveNewBtn.disabled = false), 1200);
+      }
+    });
+    inlineCloudUpdateBtn.addEventListener('click', async () => {
+      const id = appState.ui?.cloudRecordId;
+      if (!id) { alert('Нет текущей записи (сначала сохраните как новую)'); return; }
+      try {
+        inlineCloudUpdateBtn.disabled = true;
+        inlineCloudUpdateBtn.textContent = 'Обновляем…';
+        const form = new URLSearchParams();
+        form.set('action', 'update');
+        form.set('id', id);
+        const payload = { ...appState };
+        const titleVal = (inlineCloudTitle.value || '').trim();
+        if (titleVal) { payload.title = titleVal; payload.nameidp = titleVal; form.set('nameidp', titleVal); appState.ui.cloudPlanTitle = titleVal; saveToLocalStorage(); }
+        form.set('payload', JSON.stringify(payload));
+        const res = await fetch(CLOUD_APPS_SCRIPT_URL, { method: 'POST', body: form });
+        const json = await res.json();
+        if (json && json.ok) {
+          inlineCloudUpdateBtn.textContent = '✅ Обновлено';
+        } else {
+          inlineCloudUpdateBtn.textContent = 'Ошибка';
+          alert('Ошибка: ' + JSON.stringify(json));
+        }
+      } catch (e) {
+        inlineCloudUpdateBtn.textContent = 'Ошибка сети';
+        alert('Ошибка сети: ' + String(e));
+      } finally {
+        setTimeout(() => (inlineCloudUpdateBtn.textContent = 'Обновить текущую запись', inlineCloudUpdateBtn.disabled = false), 1200);
+      }
     });
   }
 
@@ -750,6 +867,7 @@ function setupEventListeners() {
   const kanbanModal = document.getElementById('kanbanTaskModal');
   const closeKanbanBtn = document.getElementById('closeKanbanTaskModal');
   const saveKanbanBtn = document.getElementById('saveKanbanTaskBtn');
+  const editKanbanBtn = document.getElementById('editKanbanTaskBtn');
   if (kanbanModal && closeKanbanBtn && saveKanbanBtn) {
     closeKanbanBtn.addEventListener('click', closeKanbanTaskModal);
     kanbanModal.addEventListener('click', (e) => {
@@ -765,6 +883,7 @@ function setupEventListeners() {
     if (d && descPrev) d.addEventListener('input', () => (descPrev.innerHTML = linkifyLinksOnly(d.value)));
     if (e && expPrev) e.addEventListener('input', () => (expPrev.innerHTML = linkifyLinksOnly(e.value)));
     if (c && comPrev) c.addEventListener('input', () => (comPrev.innerHTML = linkifyLinksOnly(c.value)));
+    if (editKanbanBtn) editKanbanBtn.addEventListener('click', () => switchKanbanTaskMode('edit'));
   }
 }
 
@@ -1270,6 +1389,38 @@ function toggleInfoModal(open) {
   modal.setAttribute('aria-hidden', open ? 'false' : 'true');
 }
 
+function toggleQuickLoadModal(open) {
+  const modal = document.getElementById('quickLoadModal');
+  if (!modal) return;
+  modal.style.display = open ? 'block' : 'none';
+  modal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+async function quickLoadByIdFromHeader() {
+  const input = document.getElementById('quickLoadIdInput');
+  const status = document.getElementById('quickLoadStatus');
+  const id = (input?.value || '').trim();
+  if (!id) { alert('Введите ID'); return; }
+  try {
+    if (status) status.textContent = 'Загрузка…';
+    const url = typeof CLOUD_APPS_SCRIPT_URL !== 'undefined' ? CLOUD_APPS_SCRIPT_URL : (appState.ui?.cloudUrl || '');
+    if (!url) { alert('Не задан URL облака'); return; }
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!(json.ok && Array.isArray(json.data))) { if (status) status.textContent = 'Ошибка ответа'; return; }
+    const row = json.data.find(x => String(x.id) === String(id));
+    if (!row || !row.payload) { if (status) status.textContent = 'Запись не найдена'; return; }
+    appState = row.payload; saveToLocalStorage();
+    renderSkills(); renderPlan(); renderProgress();
+    showSection('progressSection');
+    appState.ui = appState.ui || {}; appState.ui.cloudRecordId = id; saveToLocalStorage();
+    if (status) status.textContent = 'Загружено';
+    toggleQuickLoadModal(false);
+  } catch (e) {
+    if (status) status.textContent = 'Ошибка: ' + String(e);
+  }
+}
+
 function toggleImportModal(open) {
   const modal = document.getElementById('importModal');
   if (!modal) return;
@@ -1397,6 +1548,64 @@ function generateDevelopmentPlan() {
   });
 }
 
+// Добавление выбранных навыков к существующему плану, без пересоздания остальных
+function appendSelectedSkillsToPlan() {
+  const existing = appState.developmentPlan || {};
+  Object.entries(appState.selectedSkills).forEach(([skillId, levels]) => {
+    if (existing[skillId]) return; // уже есть — пропускаем
+    const skill = findSkillById(skillId);
+    if (!skill) return;
+    const activities = [];
+    for (let level = levels.current + 1; level <= levels.target; level++) {
+      const levelActivities = skill.levels[level].activities;
+      levelActivities.forEach((activity, index) => {
+        activities.push({
+          id: `${skillId}_${level}_${index}`,
+          name: activity,
+          level: level,
+          duration: getDurationForLevel(level - 1, level),
+          status: 'planned',
+          completed: false,
+          comment: '',
+          description: '',
+          expectedResult: '',
+          relatedSkills: [],
+          skillWeights: undefined
+        });
+      });
+    }
+    existing[skillId] = {
+      name: skill.name,
+      currentLevel: levels.current,
+      targetLevel: levels.target,
+      activities,
+      totalDuration: getDurationForLevel(levels.current, levels.target)
+    };
+  });
+  appState.developmentPlan = existing;
+}
+
+function handleAppendToPlan() {
+  // Собрать текущий выбор из UI
+  if (!appState.selectedSkills) appState.selectedSkills = {};
+  document.querySelectorAll('.skill-item').forEach(item => {
+    const skillId = item.dataset.skillId;
+    const currentLevelEl = document.getElementById(`current-${skillId}`);
+    const targetLevelEl = document.getElementById(`target-${skillId}`);
+    if (!currentLevelEl || !targetLevelEl) return;
+    const currentLevel = currentLevelEl.value ? parseInt(currentLevelEl.value) : 0;
+    const targetLevel = targetLevelEl.value ? parseInt(targetLevelEl.value) : 0;
+    if (targetLevel > currentLevel) {
+      appState.selectedSkills[skillId] = { current: currentLevel, target: targetLevel };
+    }
+  });
+  // Добавить новые навыки к плану
+  appendSelectedSkillsToPlan();
+  saveToLocalStorage();
+  showSection('planSection');
+  renderPlan();
+}
+
 function renderPlan() {
   const planContent = document.getElementById('planContent');
   if (!planContent) {
@@ -1421,9 +1630,9 @@ function renderPlan() {
       <div class="card__header"><h3>Сводка по ИПР</h3></div>
       <div class="card__body">
         <ul style="margin:0; padding-left: 18px;">
-          ${totals.map(t => `<li>${t.name}: ~${t.duration} мес.</li>`).join('')}
+          ${totals.map(t => `<li>${t.name}: ~${t.duration} нед.</li>`).join('')}
         </ul>
-        <p style="margin-top:12px;"><strong>Итого по ИПР:</strong> ~${totalMonths} мес.</p>
+        <p style="margin-top:12px;"><strong>Итого по ИПР:</strong> ~${totalMonths} нед.</p>
         <div class="form-actions" style="justify-content:flex-end; gap:8px; margin-top:12px;">
           <button class="btn btn--outline" id="backToSkills">Изменить навыки</button>
           <button class="btn btn--primary" id="startProgress">Начать выполнение</button>
@@ -1444,7 +1653,7 @@ function renderPlan() {
         <h3 class="plan-skill-title">${plan.name}</h3>
         <div class="level-progression">
           Уровень ${plan.currentLevel} <span class="level-arrow">→</span> ${plan.targetLevel}
-          <span class="activity-duration">(~${plan.totalDuration} мес.)</span>
+          <span class="activity-duration">(~${plan.totalDuration} нед.)</span>
         </div>
       </div>
       <div class="plan-activities">
@@ -1487,7 +1696,7 @@ function renderPlan() {
               </div>
             </div>
             <div style="display:flex; gap: 8px; align-items:center;">
-              <label style="font-size:12px;color:var(--color-text-secondary)">Длительность (мес.)</label>
+              <label style="font-size:12px;color:var(--color-text-secondary)">Длительность (нед.)</label>
               <input class="form-control" type="number" min="1" style="width:100px" value="${activity.duration}" onchange="updatePlanActivity('${skillId}', ${idx}, { duration: parseInt(this.value)||1 })" />
               <button class="btn btn--outline btn--sm" onclick="removePlanActivity('${skillId}', ${idx})">Удалить</button>
             </div>
@@ -1508,7 +1717,11 @@ function renderPlan() {
   const startProgressBtn = document.getElementById('startProgress');
   if (startProgressBtn) {
     startProgressBtn.onclick = () => {
-      initializeProgress();
+      if (appState.progress && Object.keys(appState.progress).length > 0) {
+        mergePlanIntoProgress();
+      } else {
+        initializeProgress();
+      }
       showSection('progressSection');
       renderProgress();
     };
@@ -1527,6 +1740,89 @@ function initializeProgress() {
     };
   });
   
+  saveToLocalStorage();
+}
+
+// Добавляем/синхронизируем задачи из плана в текущий прогресс без потери статусов
+function mergePlanIntoProgress() {
+  if (!appState.progress) appState.progress = {};
+  Object.entries(appState.developmentPlan || {}).forEach(([skillId, plan]) => {
+    const target = appState.progress[skillId];
+    if (!target) {
+      appState.progress[skillId] = {
+        name: plan.name,
+        currentLevel: plan.currentLevel,
+        targetLevel: plan.targetLevel,
+        completedActivities: 0,
+        overallProgress: 0,
+        totalDuration: plan.totalDuration,
+        activities: (plan.activities || []).map(a => ({
+          ...a,
+          status: a.status || (a.completed ? 'done' : 'planned'),
+          completed: !!a.completed
+        }))
+      };
+      return;
+    }
+    // Синхронизируем метаданные навыка
+    target.name = plan.name;
+    target.currentLevel = plan.currentLevel;
+    target.targetLevel = plan.targetLevel;
+    target.totalDuration = plan.totalDuration;
+    const byId = new Map((target.activities || []).map((a, i) => [a.id, i]));
+    (plan.activities || []).forEach(pAct => {
+      if (!byId.has(pAct.id)) {
+        // новая задача из плана — добавляем в прогресс
+        target.activities.push({
+          ...pAct,
+          status: pAct.status || 'planned',
+          completed: !!pAct.completed
+        });
+      }
+    });
+  });
+  recomputeAllProgress();
+  saveToLocalStorage();
+}
+
+// Синхронизация правок задачи из прогресса обратно в план по id
+function syncProgressTaskToPlan(skillId, activityIndex) {
+  const progPlan = appState.progress?.[skillId];
+  if (!progPlan) return;
+  const act = progPlan.activities?.[activityIndex];
+  if (!act) return;
+  if (!appState.developmentPlan) appState.developmentPlan = {};
+  if (!appState.developmentPlan[skillId]) {
+    appState.developmentPlan[skillId] = {
+      name: progPlan.name,
+      currentLevel: progPlan.currentLevel || 0,
+      targetLevel: progPlan.targetLevel || 0,
+      activities: [],
+      totalDuration: 0
+    };
+  }
+  const plan = appState.developmentPlan[skillId];
+  const idx = (plan.activities || []).findIndex(a => a.id === act.id);
+  const patchFields = ['name', 'description', 'expectedResult', 'duration', 'relatedSkills'];
+  if (idx >= 0) {
+    patchFields.forEach(k => { plan.activities[idx][k] = act[k]; });
+  } else {
+    plan.activities.push({
+      id: act.id,
+      name: act.name,
+      level: act.level,
+      duration: act.duration,
+      status: 'planned',
+      completed: false,
+      comment: '',
+      description: act.description || '',
+      expectedResult: act.expectedResult || '',
+      relatedSkills: Array.isArray(act.relatedSkills) ? [...act.relatedSkills] : [],
+      skillWeights: act.skillWeights
+    });
+  }
+  // Пересчитать длительность
+  plan.totalDuration = (plan.activities || []).reduce((s, a) => s + (a.duration || 0), 0);
   saveToLocalStorage();
 }
 
@@ -1914,20 +2210,12 @@ function renderProgressTracking() {
                   ${(activity.relatedSkills && activity.relatedSkills.length) ? `<div class=\"activity-related\">Связанные навыки: ${activity.relatedSkills.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ')}</div>` : ''}
                   <div class="activity-meta">
                     <span>Уровень ${activity.level}</span>
-                    <span>~${activity.duration} мес.</span>
+                    <span>~${activity.duration} нед.</span>
                   </div>
-                  <div class="activity-related-edit" style="margin-top:6px;">
-                    <details>
-                      <summary style="cursor:pointer;color:var(--color-text-secondary);">Изменить связанные навыки</summary>
-                      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:6px; margin-top:6px;">
-                        ${Object.entries(appState.progress || {})
-                          .filter(([id]) => id !== skillId)
-                          .map(([id, p]) => `
-                            <label class=\"checkbox\"><input type=\"checkbox\" data-skill=\"${skillId}\" data-idx=\"${index}\" data-rel-id=\"${id}\" ${Array.isArray(activity.relatedSkills) && activity.relatedSkills.includes(id) ? 'checked' : ''}> <span>${p.name}</span></label>
-                          `).join('')}
-                      </div>
-                    </details>
+                  <div style="margin:6px 0 0;">
+                    <button class="btn btn--outline btn--sm" onclick="openTaskEdit('${skillId}', ${index})">Редактировать</button>
                   </div>
+                  
                   <textarea class="form-control activity-comment" 
                            placeholder="Комментарии к выполнению..."
                            onchange="updateActivityComment('${skillId}', ${index}, this.value)"
@@ -1954,27 +2242,7 @@ function renderProgressTracking() {
     });
   });
 
-  // Обработчики чекбоксов "Изменить связанные навыки"
-  progressTracking.querySelectorAll('input[data-rel-id]').forEach(cb => {
-    cb.addEventListener('change', () => {
-      const skillId = cb.getAttribute('data-skill');
-      const idx = parseInt(cb.getAttribute('data-idx'));
-      const relId = cb.getAttribute('data-rel-id');
-      const act = appState.progress?.[skillId]?.activities?.[idx];
-      if (!act) return;
-      if (!Array.isArray(act.relatedSkills)) act.relatedSkills = [];
-      if (cb.checked) {
-        if (!act.relatedSkills.includes(relId)) act.relatedSkills.push(relId);
-        const relSkill = findSkillById(relId) || { id: relId, name: getPlanSkillName(relId) };
-        ensureSkillInPlanAndProgress(relId, relSkill.name);
-      } else {
-        act.relatedSkills = act.relatedSkills.filter(x => x !== relId);
-      }
-      saveToLocalStorage();
-      // Перерисуем, чтобы пересчитались веса и отображение
-      renderProgress();
-    });
-  });
+  // снято редактирование связанных навыков в режиме списка
 }
 
 function renderProgressKanban() {
@@ -2128,6 +2396,30 @@ function openKanbanTaskModal(skillId, index) {
     relatedWrap.innerHTML = rel.length ? rel.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ') : '<span class="text-secondary">Нет</span>';
   }
 
+  // View/Edit mode wiring
+  const viewMount = document.getElementById('kanbanTaskViewSection');
+  const editWrap = document.getElementById('kanbanTaskEditSection');
+  const saveBtn = document.getElementById('saveKanbanTaskBtn');
+  const editBtn = document.getElementById('editKanbanTaskBtn');
+  if (viewMount && editWrap && saveBtn && editBtn) {
+    viewMount.innerHTML = `
+      <div class="progress-activity">
+        <div class="activity-info">
+          <h4 class="activity-name">${escapeHtml(activity.name || '')}</h4>
+          ${activity.description ? `<div class="activity-desc">${linkify(activity.description)}</div>` : ''}
+          ${activity.expectedResult ? `<div class="activity-expected"><strong>Ожидаемый результат:</strong> ${linkify(activity.expectedResult)}</div>` : ''}
+          ${(activity.relatedSkills && activity.relatedSkills.length) ? `<div class=\"activity-related\">Связанные навыки: ${activity.relatedSkills.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ')}</div>` : ''}
+          <div class="activity-meta"><span>Уровень ${activity.level}</span><span>~${activity.duration} нед.</span></div>
+          ${activity.comment ? `<div class="activity-desc">${linkify(activity.comment)}</div>` : ''}
+        </div>
+      </div>`;
+    // default to view
+    viewMount.style.display = 'block';
+    editWrap.style.display = 'none';
+    saveBtn.style.display = 'none';
+    editBtn.style.display = 'inline-flex';
+  }
+
   // Редактирование связей: чекбоксы по текущим навыкам плана + селект каталога
   const checksWrap = document.getElementById('kanbanTaskRelatedCheckboxes');
   const addSelect = document.getElementById('kanbanTaskRelatedAddSelect');
@@ -2195,11 +2487,30 @@ function openKanbanTaskModal(skillId, index) {
   modal.setAttribute('aria-hidden', 'false');
 }
 
+// Open modal directly in edit mode from List view
+window.openTaskEdit = function(skillId, index) {
+  openKanbanTaskModal(skillId, index);
+  try { switchKanbanTaskMode('edit'); } catch (_) {}
+};
+
 function closeKanbanTaskModal() {
   const modal = document.getElementById('kanbanTaskModal');
   if (!modal) return;
   modal.style.display = 'none';
   modal.setAttribute('aria-hidden', 'true');
+}
+
+function switchKanbanTaskMode(mode) {
+  const viewMount = document.getElementById('kanbanTaskViewSection');
+  const editWrap = document.getElementById('kanbanTaskEditSection');
+  const saveBtn = document.getElementById('saveKanbanTaskBtn');
+  const editBtn = document.getElementById('editKanbanTaskBtn');
+  if (!viewMount || !editWrap || !saveBtn || !editBtn) return;
+  const isEdit = mode === 'edit';
+  viewMount.style.display = isEdit ? 'none' : 'block';
+  editWrap.style.display = isEdit ? 'grid' : 'none';
+  saveBtn.style.display = isEdit ? 'inline-flex' : 'none';
+  editBtn.style.display = isEdit ? 'none' : 'inline-flex';
 }
 
 function saveKanbanTaskModal() {
@@ -2217,7 +2528,9 @@ function saveKanbanTaskModal() {
   const dur = parseInt(document.getElementById('kanbanTaskDuration').value) || activity.duration || 1;
   activity.duration = Math.max(1, dur);
   saveToLocalStorage();
-  closeKanbanTaskModal();
+  // switch back to view mode and re-render view content
+  try { switchKanbanTaskMode('view'); } catch (_) {}
+  try { syncProgressTaskToPlan(skillId, index); } catch (_) {}
   renderProgress();
 }
 
@@ -2357,7 +2670,7 @@ function exportToPDF() {
 }
 
 function exportToCSV() {
-  let csvContent = 'Skill,Current Level,Target Level,Activity,Duration (months),Status,Comment\n';
+  let csvContent = 'Skill,Current Level,Target Level,Activity,Duration (weeks),Status,Comment\n';
   
   const planData = appState.progress || appState.developmentPlan;
   
@@ -2377,7 +2690,7 @@ function exportToCSV() {
 }
 
 function exportProgressToCSV() {
-  let csvContent = 'Skill,Current Level,Target Level,Task,Duration (months),Completed,Comment,Description,Expected Result,Status,RelatedSkills,SkillWeights\n';
+  let csvContent = 'Skill,Current Level,Target Level,Task,Duration (weeks),Completed,Comment,Description,Expected Result,Status,RelatedSkills,SkillWeights\n';
   const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
   Object.entries(planData).forEach(([skillId, plan]) => {
     plan.activities.forEach(activity => {
@@ -2496,6 +2809,7 @@ function handleImportProgressCSV(ev) {
 
       saveToLocalStorage();
       renderProgress();
+      try { showSection('progressSection'); } catch (_) {}
     } catch (e) {
       console.error('Ошибка импорта CSV прогресса:', e);
       alert('Не удалось импортировать CSV. Проверьте формат.');
