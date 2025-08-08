@@ -1080,6 +1080,19 @@ select.form-control {
   gap: var(--space-12);
 }
 
+/* Two-column layout for description/result in Plan */
+.plan-activity-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-12);
+}
+.plan-activity-grid textarea.form-control {
+  min-height: 140px;
+}
+@media (max-width: 900px) {
+  .plan-activity-grid { grid-template-columns: 1fr; }
+}
+
 .activity-item {
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);

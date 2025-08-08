@@ -361,11 +361,25 @@ function setupEventListeners() {
   const generatePlanBtn = document.getElementById('generatePlan');
   const generatePromptBtn = document.getElementById('generatePromptBtn');
   const appendToPlanBtn = document.getElementById('appendToPlan');
+  const bulkSelectBtn = document.getElementById('bulkSelectBtn');
+  const deselectAllBtn = document.getElementById('deselectAllBtn');
   if (generatePlanBtn) {
     generatePlanBtn.addEventListener('click', handleGeneratePlan);
   }
   if (appendToPlanBtn) {
     appendToPlanBtn.addEventListener('click', handleAppendToPlan);
+  }
+  if (bulkSelectBtn) {
+    bulkSelectBtn.addEventListener('click', () => toggleBulkSelectModal(true));
+  }
+  if (deselectAllBtn) {
+    deselectAllBtn.addEventListener('click', () => {
+      appState.selectedSkills = {};
+      saveToLocalStorage();
+      // Снимаем чекбокс только выбранные
+      try { const cb = document.getElementById('showOnlySelected'); if (cb) cb.checked = false; } catch (_) {}
+      renderSkills();
+    });
   }
   if (generatePromptBtn) {
     generatePromptBtn.addEventListener('click', handleGeneratePrompt);
@@ -663,11 +677,21 @@ function setupEventListeners() {
   // Prompt modal controls
   const infoModal = document.getElementById('infoModal');
   const closeInfoModalBtn = document.getElementById('closeInfoModal');
+  const bulkSelectModal = document.getElementById('bulkSelectModal');
+  const closeBulkSelectModalBtn = document.getElementById('closeBulkSelectModal');
+  const bulkSelectConfirmBtn = document.getElementById('bulkSelectConfirmBtn');
   if (infoModal && closeInfoModalBtn) {
     closeInfoModalBtn.addEventListener('click', () => toggleInfoModal(false));
     infoModal.addEventListener('click', (e) => {
       if (e.target && e.target.hasAttribute('data-close-modal')) toggleInfoModal(false);
     });
+  }
+  if (bulkSelectModal && closeBulkSelectModalBtn && bulkSelectConfirmBtn) {
+    closeBulkSelectModalBtn.addEventListener('click', () => toggleBulkSelectModal(false));
+    bulkSelectModal.addEventListener('click', (e) => {
+      if (e.target && e.target.hasAttribute('data-close-modal')) toggleBulkSelectModal(false);
+    });
+    bulkSelectConfirmBtn.addEventListener('click', handleBulkSelectSkills);
   }
 
   // Quick load modal controls
@@ -1389,6 +1413,48 @@ function toggleInfoModal(open) {
   modal.setAttribute('aria-hidden', open ? 'false' : 'true');
 }
 
+function toggleBulkSelectModal(open) {
+  const modal = document.getElementById('bulkSelectModal');
+  if (!modal) return;
+  modal.style.display = open ? 'block' : 'none';
+  modal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+function handleBulkSelectSkills() {
+  const ta = document.getElementById('bulkSelectText');
+  if (!ta) return;
+  const lines = String(ta.value || '')
+    .split(/\r?\n/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (lines.length === 0) { toggleBulkSelectModal(false); return; }
+  // Маппинг имя -> id
+  const nameToId = new Map();
+  Object.values(skillsData.skills || {}).forEach(arr => (arr || []).forEach(s => nameToId.set(String(s.name).toLowerCase(), s.id)));
+  // выберем 0→1 для найденных
+  if (!appState.selectedSkills) appState.selectedSkills = {};
+  lines.forEach(raw => {
+    // Поддержка формата: "Название\t1" или "Название 1" (цифра в конце)
+    let name = raw;
+    let curLevel = 0;
+    const m = raw.match(/^(.*?)[\t\s]+(\d+)$/);
+    if (m) {
+      name = m[1].trim();
+      curLevel = Math.max(0, Math.min(4, parseInt(m[2], 10) || 0));
+    }
+    const id = nameToId.get(String(name).toLowerCase());
+    if (id) {
+      const target = Math.max(curLevel + 1, 1);
+      appState.selectedSkills[id] = { current: curLevel, target: Math.min(4, target) };
+    }
+  });
+  // Активируем фильтр "Только выбранные"
+  try { const cb = document.getElementById('showOnlySelected'); if (cb) { cb.checked = true; } } catch (_) {}
+  saveToLocalStorage();
+  renderSkills();
+  toggleBulkSelectModal(false);
+}
+
 function toggleQuickLoadModal(open) {
   const modal = document.getElementById('quickLoadModal');
   if (!modal) return;
@@ -1647,6 +1713,25 @@ function renderPlan() {
     (arr || []).forEach(s => catalog.push({ id: s.id, name: s.name }));
   });
 
+  const addSkillPanel = `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card__body">
+        <div class="form-group" style="display:flex; gap:8px; align-items:flex-end; margin:0;">
+          <div style="flex:1; min-width:260px;">
+            <label class="form-label">Добавить навык в план</label>
+            <select id="planAddSkillSelect" class="form-control">
+              <option value="">Выберите навык из каталога</option>
+              ${catalog
+                .filter(s => !allSkillIds.includes(s.id))
+                .map(s => `<option value="${s.id}">${s.name}</option>`)
+                .join('')}
+            </select>
+          </div>
+          <button class="btn btn--secondary btn--sm" id="planAddSkillBtn">Добавить</button>
+        </div>
+      </div>
+    </div>`;
+
   planContent.innerHTML = summaryHtml + Object.entries(appState.developmentPlan).map(([skillId, plan]) => `
     <div class="plan-skill" data-plan-skill-id="${skillId}">
       <div class="plan-skill-header">
@@ -1654,6 +1739,9 @@ function renderPlan() {
         <div class="level-progression">
           Уровень ${plan.currentLevel} <span class="level-arrow">→</span> ${plan.targetLevel}
           <span class="activity-duration">(~${plan.totalDuration} нед.)</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button class="btn btn--outline btn--sm" title="Удалить навык из плана" onclick="removePlanSkill('${skillId}')">Удалить навык</button>
         </div>
       </div>
       <div class="plan-activities">
@@ -1663,13 +1751,15 @@ function renderPlan() {
               <label class="form-label">Название задачи</label>
               <input class="form-control" type="text" value="${activity.name.replace(/\"/g, '&quot;')}" onchange="updatePlanActivity('${skillId}', ${idx}, { name: this.value })" />
             </div>
-            <div class="form-group" style="margin-bottom:8px;">
-              <label class="form-label">Описание задачи</label>
-              <textarea class="form-control" rows="2" onchange="updatePlanActivity('${skillId}', ${idx}, { description: this.value })">${(activity.description || '').replace(/</g,'&lt;')}</textarea>
-            </div>
-            <div class="form-group" style="margin-bottom:8px;">
-              <label class="form-label">Плановый результат</label>
-              <textarea class="form-control" rows="2" onchange="updatePlanActivity('${skillId}', ${idx}, { expectedResult: this.value })">${(activity.expectedResult || '').replace(/</g,'&lt;')}</textarea>
+            <div class="plan-activity-grid">
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label">Описание задачи</label>
+                <textarea class="form-control" rows="6" onchange="updatePlanActivity('${skillId}', ${idx}, { description: this.value })">${(activity.description || '').replace(/</g,'&lt;')}</textarea>
+              </div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label">Плановый результат</label>
+                <textarea class="form-control" rows="6" onchange="updatePlanActivity('${skillId}', ${idx}, { expectedResult: this.value })">${(activity.expectedResult || '').replace(/</g,'&lt;')}</textarea>
+              </div>
             </div>
             <div class="form-group" style="margin-bottom:8px;">
               <label class="form-label">Связанные навыки (задача влияет также на)</label>
@@ -1707,12 +1797,21 @@ function renderPlan() {
         <button class="btn btn--secondary btn--sm" onclick="addPlanActivity('${skillId}')">Добавить задачу</button>
       </div>
     </div>
-  `).join('');
+  `).join('') + addSkillPanel;
 
   // Привяжем обработчики к кнопкам, т.к. они динамические
   const backToSkillsBtn = document.getElementById('backToSkills');
   if (backToSkillsBtn) {
     backToSkillsBtn.onclick = () => showSection('skillsSection');
+  }
+  const planAddSkillBtn = document.getElementById('planAddSkillBtn');
+  if (planAddSkillBtn) {
+    planAddSkillBtn.onclick = () => {
+      const sel = document.getElementById('planAddSkillSelect');
+      const id = sel && sel.value;
+      if (!id) return;
+      addSkillToPlan(id);
+    };
   }
   const startProgressBtn = document.getElementById('startProgress');
   if (startProgressBtn) {
@@ -2598,6 +2697,52 @@ window.removePlanActivity = function(skillId, idx) {
   const plan = appState.developmentPlan[skillId];
   if (!plan) return;
   plan.activities.splice(idx, 1);
+  saveToLocalStorage();
+  renderPlan();
+};
+
+// Полное удаление навыка из плана (и развыбор), с синхронизацией прогресса
+window.removePlanSkill = function(skillId) {
+  if (!skillId) return;
+  // Удаляем из плана
+  if (appState.developmentPlan && appState.developmentPlan[skillId]) {
+    delete appState.developmentPlan[skillId];
+  }
+  // Удаляем из выбранных навыков
+  if (appState.selectedSkills && appState.selectedSkills[skillId]) {
+    delete appState.selectedSkills[skillId];
+  }
+  // Удаляем из прогресса (если хотим полностью убрать из трекинга)
+  if (appState.progress && appState.progress[skillId]) {
+    delete appState.progress[skillId];
+  }
+  saveToLocalStorage();
+  renderPlan();
+  // Обновим прогресс, если открыт
+  try { renderProgress(); } catch (_) {}
+};
+
+// Добавить навык по id из каталога CSV в план, подготовить к добавлению задач
+window.addSkillToPlan = function(skillId) {
+  if (!skillId) return;
+  // Найти навык в каталоге
+  const skill = findSkillById(skillId);
+  if (!skill) { alert('Навык не найден в каталоге'); return; }
+  // Если уже есть — ничего не делаем
+  if (appState.developmentPlan && appState.developmentPlan[skillId]) return;
+  if (!appState.developmentPlan) appState.developmentPlan = {};
+  // Проставим дефолтные уровни 0→1 и пустые задачи
+  appState.developmentPlan[skillId] = {
+    name: skill.name,
+    currentLevel: 0,
+    targetLevel: 1,
+    activities: [],
+    totalDuration: 0
+  };
+  // Отметим в selectedSkills, чтобы синхронизировалось и в UI навыков
+  if (!appState.selectedSkills) appState.selectedSkills = {};
+  appState.selectedSkills[skillId] = { current: 0, target: 1 };
+  // Обновим прогресс/план (прогресс не трогаем до старта или merge)
   saveToLocalStorage();
   renderPlan();
 };

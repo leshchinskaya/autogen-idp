@@ -113,11 +113,19 @@
                         <div class="card__body">
                             <div class="status status--info" style="margin-bottom:12px;">Выбери те навыки, которые бы хотелось развивать и переходи к Созданию ИПР. Укажите текущий и желаемый уровни для каждого навыка</div>
                             
-                            <div id="skillsCsvHelper" class="form-group" style="display:none; margin: 12px 0;">
-                                <label class="form-label">Загрузите CSV с навыками</label>
-                                <input type="file" id="skillsCsvFile" accept=".csv" class="form-control" />
+                            <div class="skills-topbar" style="display:flex; justify-content:space-between; gap:12px; align-items:flex-end; margin-bottom:8px;">
+                                <div style="display:flex; gap:12px; align-items:flex-end;">
+                                    <div id="skillsCsvHelper" class="form-group" style="display:none; margin: 0;">
+                                        <label class="form-label">Загрузите CSV с навыками</label>
+                                        <input type="file" id="skillsCsvFile" accept=".csv" class="form-control" />
+                                    </div>
+                                    <button class="btn btn--primary" id="bulkSelectBtn">Вставить список слабых навыков</button>
+                                </div>
+                                <div style="display:flex; gap:12px; align-items:flex-end;">
+                                    <button class="btn btn--primary" id="generatePlan">Создать план развития</button>
+                                    <button class="btn btn--secondary" id="appendToPlan" style="display:none;">Добавить в текущий план</button>
+                                </div>
                             </div>
-
                             <div class="skills-toolbar form-actions--sticky">
                                 <div class="form-group" style="margin:0; flex: 1;">
                                     <label class="form-label">Поиск навыков</label>
@@ -128,9 +136,7 @@
                                         <input type="checkbox" id="showOnlySelected" /> Только выбранные
                                     </label>
                                     <span id="selectedCounter" class="counter-badge">Выбрано: 0</span>
-                                    <button class="btn btn--outline" id="backToProfile">Назад</button>
-                                    <button class="btn btn--primary" id="generatePlan">Создать план развития</button>
-                                     <button class="btn btn--secondary" id="appendToPlan" style="display:none;">Добавить в текущий план</button>
+                                    <button class="btn btn--outline" id="deselectAllBtn">Развыбрать все</button>
                                 </div>
                             </div>
 
@@ -336,6 +342,26 @@
                 </section>
             </div>
         </main>
+    </div>
+
+    <!-- Bulk Select Skills Modal -->
+    <div id="bulkSelectModal" class="modal" aria-hidden="true" style="display:none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="bulkSelectModalTitle">
+        <div class="modal__header">
+          <h3 id="bulkSelectModalTitle">Загрузить список навыков</h3>
+          <button class="btn btn--outline btn--sm" id="closeBulkSelectModal">Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <p style="margin-bottom:8px;color:var(--color-text-secondary);font-size:12px;">Вставьте список названий навыков, по одному на строку. Найденные в каталоге будут выбраны 0→1 и отфильтрованы.</p>
+          <textarea id="bulkSelectText" class="form-control" style="min-height: 240px; resize: vertical;" placeholder="Тестирование безопасности	1
+Тестирование локализации	2
+Firebase	2"></textarea>
+        </div>
+        <div class="modal__footer">
+          <button class="btn btn--primary" id="bulkSelectConfirmBtn">Выбрать навыки</button>
+        </div>
+      </div>
     </div>
 
     <!-- Kanban Task Modal -->
