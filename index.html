@@ -426,12 +426,13 @@
             <label class="form-label">Название ИПР</label>
             <input type="text" id="cloudPlanTitleInput" class="form-control" placeholder="Например: ИПР — Петров П., QA Auto (Q4)" />
           </div>
-          <div class="form-group">
-            <label class="form-label">URL Web App (Apps Script)</label>
-            <input type="text" id="cloudUrlInput" class="form-control" placeholder="https://script.google.com/macros/s/DEPLOYMENT_ID/exec" />
+          <div class="status status--info" style="margin-bottom:12px;">
+            Сохраняется весь текущий план/прогресс как единый JSON.
+            <span id="cloudCurrentRecordInline" style="margin-left:6px; font-size:12px; color:var(--color-text-secondary);"></span>
           </div>
-          <div class="status status--info" style="margin-bottom:12px;">Сохраняется весь текущий план/прогресс как единый JSON.
-            <div id="cloudCurrentRecord" style="margin-top:6px; font-size:12px; color:var(--color-text-secondary);"></div>
+          <div id="cloudLoading" class="loading-row" style="display:none; margin:-4px 0 12px 0;">
+            <span class="spinner" aria-hidden="true"></span>
+            <span id="cloudLoadingText">Загрузка…</span>
           </div>
           <div class="export-buttons">
             <button class="btn btn--primary btn--sm" id="cloudSaveNewBtn">Сохранить как новую запись</button>

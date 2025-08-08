@@ -216,6 +216,7 @@ function initializeApp() {
     if (continueBtn) {
       continueBtn.style.display = 'inline-flex';
     }
+    try { populateProfileFormFromState(); } catch (_) {}
   }
   
   // Установка светлой темы по умолчанию
@@ -371,7 +372,9 @@ function setupEventListeners() {
   // Cloud modal
   const cloudModal = document.getElementById('cloudModal');
   const closeCloudModal = document.getElementById('closeCloudModal');
-  const cloudUrlInput = document.getElementById('cloudUrlInput');
+  // Хардкоднутый URL Apps Script
+  const CLOUD_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwqOobmbWA97CN7cJUQ6sQ8pO63ITTVqEhrhkLA-90pzjfIlRTbUmaXPQF1oerLmxxnfA/exec';
+  const cloudUrlInput = null;
   const cloudPlanTitleInput = document.getElementById('cloudPlanTitleInput');
   const cloudSaveNewBtn = document.getElementById('cloudSaveNewBtn');
   const cloudUpdateBtn = document.getElementById('cloudUpdateBtn');
@@ -382,11 +385,16 @@ function setupEventListeners() {
   const cloudLoadByIdBtn = document.getElementById('cloudLoadByIdBtn');
   const cloudLog = document.getElementById('cloudLog');
   const cloudCurrentRecord = document.getElementById('cloudCurrentRecord');
-  if (cloudSyncBtn && cloudModal && closeCloudModal && cloudUrlInput && cloudSaveNewBtn && cloudUpdateBtn && cloudLoadLatestBtn && cloudLog) {
+  const cloudCurrentRecordInline = document.getElementById('cloudCurrentRecordInline');
+  const cloudLoading = document.getElementById('cloudLoading');
+  const cloudLoadingText = document.getElementById('cloudLoadingText');
+  if (cloudSyncBtn && cloudModal && closeCloudModal && cloudSaveNewBtn && cloudUpdateBtn && cloudLoadLatestBtn && cloudLog) {
     cloudSyncBtn.addEventListener('click', () => {
-      cloudUrlInput.value = appState.ui?.cloudUrl || '';
+      // URL теперь хардкоднут
       cloudPlanTitleInput.value = appState.ui?.cloudPlanTitle || '';
-      cloudCurrentRecord.textContent = appState.ui?.cloudRecordId ? `Текущая запись: ${appState.ui.cloudRecordId}` : 'Текущая запись: отсутствует';
+      const idTxt = appState.ui?.cloudRecordId ? `id = ${appState.ui.cloudRecordId}` : 'id отсутствует';
+      if (cloudCurrentRecord) cloudCurrentRecord.textContent = `Текущая запись: ${appState.ui?.cloudRecordId || 'отсутствует'}`;
+      if (cloudCurrentRecordInline) cloudCurrentRecordInline.textContent = appState.ui?.cloudRecordId ? `id = ${appState.ui.cloudRecordId}` : '';
       cloudLog.textContent = '';
       cloudModal.style.display = 'block';
       cloudModal.setAttribute('aria-hidden', 'false');
@@ -402,12 +410,12 @@ function setupEventListeners() {
       }
     });
     const setLog = (msg) => cloudLog.textContent = msg;
-    const ensureUrl = () => {
-      const url = cloudUrlInput.value.trim();
-      if (!url) { alert('Укажите URL Apps Script Web App'); return null; }
-      appState.ui = appState.ui || {}; appState.ui.cloudUrl = url; saveToLocalStorage();
-      return url;
+    const setLoading = (on, text) => {
+      if (!cloudLoading) return;
+      cloudLoading.style.display = on ? 'inline-flex' : 'none';
+      if (cloudLoadingText && typeof text === 'string') cloudLoadingText.textContent = text;
     };
+    const ensureUrl = () => CLOUD_APPS_SCRIPT_URL;
     const ensureTitle = () => {
       const title = (cloudPlanTitleInput.value || '').trim();
       if (title) { appState.ui.cloudPlanTitle = title; saveToLocalStorage(); }
@@ -416,6 +424,7 @@ function setupEventListeners() {
     cloudSaveNewBtn.addEventListener('click', async () => {
       const url = ensureUrl(); if (!url) return;
       try {
+        setLoading(true, 'Сохраняем…');
         const form = new URLSearchParams();
         form.set('action', 'append');
         const payload = { ...appState };
@@ -425,15 +434,18 @@ function setupEventListeners() {
         const json = await res.json();
         if (json.ok && json.id) {
           appState.ui = appState.ui || {}; appState.ui.cloudRecordId = json.id; saveToLocalStorage();
-          cloudCurrentRecord.textContent = `Текущая запись: ${json.id}`;
+          if (cloudCurrentRecord) cloudCurrentRecord.textContent = `Текущая запись: ${json.id}`;
+          if (cloudCurrentRecordInline) cloudCurrentRecordInline.textContent = `id = ${json.id}`;
           setLog('Сохранено как новая запись');
         } else setLog('Ошибка: ' + JSON.stringify(json));
       } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+      finally { setLoading(false); }
     });
     cloudUpdateBtn.addEventListener('click', async () => {
       const url = ensureUrl(); if (!url) return;
       const id = appState.ui?.cloudRecordId; if (!id) { alert('Нет текущей записи (сначала сохраните как новую)'); return; }
       try {
+        setLoading(true, 'Обновляем…');
         const form = new URLSearchParams();
         form.set('action', 'update');
         form.set('id', id);
@@ -444,10 +456,12 @@ function setupEventListeners() {
         const json = await res.json();
         setLog(json.ok ? 'Обновлено' : ('Ошибка: ' + JSON.stringify(json)));
       } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+      finally { setLoading(false); }
     });
     cloudLoadLatestBtn.addEventListener('click', async () => {
       const url = ensureUrl(); if (!url) return;
       try {
+        setLoading(true, 'Загружаем последнюю запись…');
         const res = await fetch(url);
         const json = await res.json();
         if (json.ok && Array.isArray(json.data) && json.data.length) {
@@ -455,17 +469,21 @@ function setupEventListeners() {
           if (latest && latest.payload) {
             appState = latest.payload; saveToLocalStorage();
             renderSkills(); renderPlan(); renderProgress();
-            cloudCurrentRecord.textContent = latest.id ? `Текущая запись: ${latest.id}` : 'Текущая запись: неизвестна';
+            if (cloudCurrentRecord) cloudCurrentRecord.textContent = latest.id ? `Текущая запись: ${latest.id}` : 'Текущая запись: неизвестна';
+            if (cloudCurrentRecordInline) cloudCurrentRecordInline.textContent = latest.id ? `id = ${latest.id}` : '';
+            // заполнение формы профиля, если секция активна
+            try { populateProfileFormFromState(); } catch (_) {}
             if (latest.id) { appState.ui = appState.ui || {}; appState.ui.cloudRecordId = latest.id; saveToLocalStorage(); }
             setLog('Загружено');
           } else setLog('Нет данных payload у последней записи');
         } else setLog('Нет записей');
       } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+      finally { setLoading(false); }
     });
 
     async function refreshCloudList() {
       const url = ensureUrl(); if (!url) return;
-      setLog('Загрузка списка...');
+      setLoading(true, 'Загружаем список…');
       try {
         const res = await fetch(url);
         const json = await res.json();
@@ -489,11 +507,13 @@ function setupEventListeners() {
         cloudList.querySelectorAll('[data-copy-id]').forEach(b => b.addEventListener('click', () => { navigator.clipboard.writeText(b.getAttribute('data-copy-id')); setLog('ID скопирован'); }));
         setLog('Список загружен');
       } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+      finally { setLoading(false); }
     }
 
     async function loadById(id) {
       const url = ensureUrl(); if (!url) return;
       try {
+        setLoading(true, `Загружаем id ${id}…`);
         // нет прямого API фильтрации, тянем всё и ищем id на клиенте
         const res = await fetch(url);
         const json = await res.json();
@@ -504,9 +524,12 @@ function setupEventListeners() {
         appState = row.payload; saveToLocalStorage();
         renderSkills(); renderPlan(); renderProgress();
         appState.ui = appState.ui || {}; appState.ui.cloudRecordId = id; saveToLocalStorage();
-        cloudCurrentRecord.textContent = `Текущая запись: ${id}`;
+        if (cloudCurrentRecord) cloudCurrentRecord.textContent = `Текущая запись: ${id}`;
+        if (cloudCurrentRecordInline) cloudCurrentRecordInline.textContent = `id = ${id}`;
+        try { populateProfileFormFromState(); } catch (_) {}
         setLog('Загружено');
       } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+      finally { setLoading(false); }
     }
 
     cloudRefreshListBtn?.addEventListener('click', refreshCloudList);
@@ -680,6 +703,20 @@ function handleProfileSubmit(e) {
   console.log('Профиль сохранен:', appState.profile);
   saveToLocalStorage();
   showSection('skillsSection');
+}
+
+// Заполняем форму профиля из appState.profile, если элементы присутствуют
+function populateProfileFormFromState() {
+  const fullNameEl = document.getElementById('fullName');
+  const positionEl = document.getElementById('position');
+  const gradeEl = document.getElementById('grade');
+  const trackEl = document.getElementById('track');
+  if (!fullNameEl || !positionEl || !gradeEl) return;
+  const p = appState.profile || {};
+  if (typeof p.fullName === 'string') fullNameEl.value = p.fullName;
+  if (typeof p.position === 'string') positionEl.value = p.position;
+  if (typeof p.grade === 'string') gradeEl.value = p.grade;
+  if (trackEl && typeof p.track === 'string') trackEl.value = p.track;
 }
 
 function renderSkills() {
@@ -1271,6 +1308,15 @@ function renderPlan() {
     return;
   }
   
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   // Общая сводка по ИПР
   const totals = Object.entries(appState.developmentPlan).map(([id, p]) => ({ id, name: p.name, duration: p.totalDuration }));
   const totalMonths = totals.reduce((s, t) => s + (t.duration || 0), 0);
