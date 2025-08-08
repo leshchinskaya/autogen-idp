@@ -219,10 +219,13 @@ function initializeApp() {
     try { populateProfileFormFromState(); } catch (_) {}
   }
   
-  // Установка светлой темы по умолчанию
-  document.documentElement.setAttribute('data-color-scheme', 'light');
+  // Устанавливаем тему: сохранённая → системная → light
+  const savedTheme = appState.ui?.theme;
+  const prefersDark = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-color-scheme', initialTheme);
   const button = document.getElementById('darkModeToggle');
-  if (button) button.textContent = '🌙 Тёмная тема';
+  if (button) button.textContent = initialTheme === 'dark' ? '☀️ Светлая тема' : '🌙 Тёмная тема';
 }
 
 // Миграция/нормализация сохранённого состояния (добавляем status для задач)
@@ -2207,6 +2210,12 @@ function toggleTheme() {
   if (button) {
     button.textContent = newTheme === 'dark' ? '☀️ Светлая тема' : '🌙 Тёмная тема';
   }
+  // persist
+  try {
+    appState.ui = appState.ui || {};
+    appState.ui.theme = newTheme;
+    saveToLocalStorage();
+  } catch (_) {}
 }
 
 function exportToPDF() {
