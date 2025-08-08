@@ -372,14 +372,20 @@ function setupEventListeners() {
   const cloudModal = document.getElementById('cloudModal');
   const closeCloudModal = document.getElementById('closeCloudModal');
   const cloudUrlInput = document.getElementById('cloudUrlInput');
+  const cloudPlanTitleInput = document.getElementById('cloudPlanTitleInput');
   const cloudSaveNewBtn = document.getElementById('cloudSaveNewBtn');
   const cloudUpdateBtn = document.getElementById('cloudUpdateBtn');
   const cloudLoadLatestBtn = document.getElementById('cloudLoadLatestBtn');
+  const cloudRefreshListBtn = document.getElementById('cloudRefreshListBtn');
+  const cloudList = document.getElementById('cloudList');
+  const cloudLoadIdInput = document.getElementById('cloudLoadIdInput');
+  const cloudLoadByIdBtn = document.getElementById('cloudLoadByIdBtn');
   const cloudLog = document.getElementById('cloudLog');
   const cloudCurrentRecord = document.getElementById('cloudCurrentRecord');
   if (cloudSyncBtn && cloudModal && closeCloudModal && cloudUrlInput && cloudSaveNewBtn && cloudUpdateBtn && cloudLoadLatestBtn && cloudLog) {
     cloudSyncBtn.addEventListener('click', () => {
       cloudUrlInput.value = appState.ui?.cloudUrl || '';
+      cloudPlanTitleInput.value = appState.ui?.cloudPlanTitle || '';
       cloudCurrentRecord.textContent = appState.ui?.cloudRecordId ? `Текущая запись: ${appState.ui.cloudRecordId}` : 'Текущая запись: отсутствует';
       cloudLog.textContent = '';
       cloudModal.style.display = 'block';
@@ -402,12 +408,19 @@ function setupEventListeners() {
       appState.ui = appState.ui || {}; appState.ui.cloudUrl = url; saveToLocalStorage();
       return url;
     };
+    const ensureTitle = () => {
+      const title = (cloudPlanTitleInput.value || '').trim();
+      if (title) { appState.ui.cloudPlanTitle = title; saveToLocalStorage(); }
+      return title;
+    };
     cloudSaveNewBtn.addEventListener('click', async () => {
       const url = ensureUrl(); if (!url) return;
       try {
         const form = new URLSearchParams();
         form.set('action', 'append');
-        form.set('payload', JSON.stringify(appState));
+        const payload = { ...appState };
+        if (ensureTitle()) payload.title = appState.ui.cloudPlanTitle;
+        form.set('payload', JSON.stringify(payload));
         const res = await fetch(url, { method: 'POST', body: form });
         const json = await res.json();
         if (json.ok && json.id) {
@@ -424,7 +437,9 @@ function setupEventListeners() {
         const form = new URLSearchParams();
         form.set('action', 'update');
         form.set('id', id);
-        form.set('payload', JSON.stringify(appState));
+        const payload = { ...appState };
+        if (ensureTitle()) payload.title = appState.ui.cloudPlanTitle;
+        form.set('payload', JSON.stringify(payload));
         const res = await fetch(url, { method: 'POST', body: form });
         const json = await res.json();
         setLog(json.ok ? 'Обновлено' : ('Ошибка: ' + JSON.stringify(json)));
@@ -446,6 +461,58 @@ function setupEventListeners() {
           } else setLog('Нет данных payload у последней записи');
         } else setLog('Нет записей');
       } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+    });
+
+    async function refreshCloudList() {
+      const url = ensureUrl(); if (!url) return;
+      setLog('Загрузка списка...');
+      try {
+        const res = await fetch(url);
+        const json = await res.json();
+        if (!(json.ok && Array.isArray(json.data))) { setLog('Ошибка ответа'); return; }
+        const rows = json.data;
+        const html = rows.map(r => {
+          const t = (r.payload && (r.payload.title || r.payload.ui?.cloudPlanTitle)) || '(без названия)';
+          return `<div style="display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--color-card-border-inner);">
+            <div style="min-width:0;">
+              <div style="font-weight:550;">${escapeHtml(t)}</div>
+              <div style="font-size:12px; color:var(--color-text-secondary);">ID: ${r.id} • ${r.ts}</div>
+            </div>
+            <div style="flex-shrink:0; display:flex; gap:6px;">
+              <button class="btn btn--outline btn--sm" data-load-id="${r.id}">Открыть</button>
+              <button class="btn btn--secondary btn--sm" data-copy-id="${r.id}">Копировать ID</button>
+            </div>
+          </div>`;
+        }).join('');
+        cloudList.innerHTML = html || '<div class="text-secondary">Пусто</div>';
+        cloudList.querySelectorAll('[data-load-id]').forEach(b => b.addEventListener('click', () => loadById(b.getAttribute('data-load-id'))));
+        cloudList.querySelectorAll('[data-copy-id]').forEach(b => b.addEventListener('click', () => { navigator.clipboard.writeText(b.getAttribute('data-copy-id')); setLog('ID скопирован'); }));
+        setLog('Список загружен');
+      } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+    }
+
+    async function loadById(id) {
+      const url = ensureUrl(); if (!url) return;
+      try {
+        // нет прямого API фильтрации, тянем всё и ищем id на клиенте
+        const res = await fetch(url);
+        const json = await res.json();
+        if (!(json.ok && Array.isArray(json.data))) { setLog('Ошибка ответа'); return; }
+        const row = json.data.find(x => String(x.id) === String(id));
+        if (!row) { setLog('Запись не найдена'); return; }
+        if (!row.payload) { setLog('Пустой payload'); return; }
+        appState = row.payload; saveToLocalStorage();
+        renderSkills(); renderPlan(); renderProgress();
+        appState.ui = appState.ui || {}; appState.ui.cloudRecordId = id; saveToLocalStorage();
+        cloudCurrentRecord.textContent = `Текущая запись: ${id}`;
+        setLog('Загружено');
+      } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+    }
+
+    cloudRefreshListBtn?.addEventListener('click', refreshCloudList);
+    cloudLoadByIdBtn?.addEventListener('click', () => {
+      const id = cloudLoadIdInput.value.trim(); if (!id) { alert('Введите ID'); return; }
+      loadById(id);
     });
   }
 
@@ -1669,7 +1736,7 @@ function renderProgressTracking() {
     });
     return referenced;
   };
-
+  
   progressTracking.innerHTML = Object.entries(appState.progress).map(([skillId, skill]) => {
     const relatedOnly = isRelatedOnlySkill(skillId);
     const progressPercentage = relatedOnly
@@ -1677,14 +1744,14 @@ function renderProgressTracking() {
       : (skill.activities.length > 0 ? (skill.completedActivities / skill.activities.length) * 100 : 0);
     const allDone = relatedOnly || (skill.activities.length > 0 && skill.completedActivities === skill.activities.length);
     const collapsed = !!(appState.ui && appState.ui.collapsedSkills && appState.ui.collapsedSkills[skillId]);
-
+    
     return `
       <div class="progress-skill ${allDone ? 'bg-success' : 'progress-skill--remaining'}" data-skill-id="${skillId}">
         <div class="progress-skill-header">
           <h3 class="progress-skill-title">${skill.name}</h3>
           <div style="display:flex; align-items:center; gap:8px;">
             <button type="button" class="btn btn--outline btn--sm progress-skill-toggle" data-skill-id="${skillId}" title="${collapsed ? 'Развернуть' : 'Свернуть'}">${collapsed ? '▸' : '▾'}</button>
-            <span class="text-primary font-bold">${Math.round(progressPercentage)}%</span>
+          <span class="text-primary font-bold">${Math.round(progressPercentage)}%</span>
           </div>
         </div>
         <div class="skill-progress-bar">
@@ -1727,7 +1794,7 @@ function renderProgressTracking() {
             </div>
           `).join('')}
         </div>` : ''}
-      </div>
+        </div>
     `;
   }).join('');
 
@@ -1804,9 +1871,9 @@ function renderProgressKanban() {
         <div class="kanban-epic">
           <div class="kanban-epic-header">${grp.name}</div>
           <div class="kanban-epic-list">${itemsHtml}</div>
-        </div>
-      `;
-    }).join('');
+      </div>
+    `;
+  }).join('');
     return `
       <div class="kanban-section">
         ${laneTitle ? '<h4>' + laneTitle + '</h4>' : ''}
