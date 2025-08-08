@@ -385,8 +385,8 @@ function setupEventListeners() {
   const cloudPlanTitleInput = document.getElementById('cloudPlanTitleInput');
   const cloudSaveNewBtn = document.getElementById('cloudSaveNewBtn');
   const cloudUpdateBtn = document.getElementById('cloudUpdateBtn');
-  const cloudLoadLatestBtn = document.getElementById('cloudLoadLatestBtn');
-  const cloudRefreshListBtn = document.getElementById('cloudRefreshListBtn');
+  const cloudLoadLatestBtn = null; // удалено из UI
+  const cloudRefreshListBtn = null; // удалено из UI
   const cloudList = document.getElementById('cloudList');
   const cloudLoadIdInput = document.getElementById('cloudLoadIdInput');
   const cloudLoadByIdBtn = document.getElementById('cloudLoadByIdBtn');
@@ -395,7 +395,7 @@ function setupEventListeners() {
   const cloudCurrentRecordInline = document.getElementById('cloudCurrentRecordInline');
   const cloudLoading = document.getElementById('cloudLoading');
   const cloudLoadingText = document.getElementById('cloudLoadingText');
-  if (cloudSyncBtn && cloudModal && closeCloudModal && cloudSaveNewBtn && cloudUpdateBtn && cloudLoadLatestBtn && cloudLog) {
+  if (cloudSyncBtn && cloudModal && closeCloudModal && cloudSaveNewBtn && cloudUpdateBtn && cloudLog) {
     cloudSyncBtn.addEventListener('click', () => {
       // URL теперь хардкоднут
       cloudPlanTitleInput.value = appState.ui?.cloudPlanTitle || '';
@@ -435,7 +435,12 @@ function setupEventListeners() {
         const form = new URLSearchParams();
         form.set('action', 'append');
         const payload = { ...appState };
-        if (ensureTitle()) payload.title = appState.ui.cloudPlanTitle;
+        const titleVal = ensureTitle();
+        if (titleVal) {
+          payload.title = titleVal;
+          payload.nameidp = titleVal;
+          form.set('nameidp', titleVal);
+        }
         form.set('payload', JSON.stringify(payload));
         const res = await fetch(url, { method: 'POST', body: form });
         const json = await res.json();
@@ -457,7 +462,12 @@ function setupEventListeners() {
         form.set('action', 'update');
         form.set('id', id);
         const payload = { ...appState };
-        if (ensureTitle()) payload.title = appState.ui.cloudPlanTitle;
+        const titleVal = ensureTitle();
+        if (titleVal) {
+          payload.title = titleVal;
+          payload.nameidp = titleVal;
+          form.set('nameidp', titleVal);
+        }
         form.set('payload', JSON.stringify(payload));
         const res = await fetch(url, { method: 'POST', body: form });
         const json = await res.json();
@@ -465,28 +475,7 @@ function setupEventListeners() {
       } catch (e) { setLog('Ошибка сети: ' + String(e)); }
       finally { setLoading(false); }
     });
-    cloudLoadLatestBtn.addEventListener('click', async () => {
-      const url = ensureUrl(); if (!url) return;
-      try {
-        setLoading(true, 'Загружаем последнюю запись…');
-        const res = await fetch(url);
-        const json = await res.json();
-        if (json.ok && Array.isArray(json.data) && json.data.length) {
-          const latest = json.data[json.data.length - 1];
-          if (latest && latest.payload) {
-            appState = latest.payload; saveToLocalStorage();
-            renderSkills(); renderPlan(); renderProgress();
-            if (cloudCurrentRecord) cloudCurrentRecord.textContent = latest.id ? `Текущая запись: ${latest.id}` : 'Текущая запись: неизвестна';
-            if (cloudCurrentRecordInline) cloudCurrentRecordInline.textContent = latest.id ? `id = ${latest.id}` : '';
-            // заполнение формы профиля, если секция активна
-            try { populateProfileFormFromState(); } catch (_) {}
-            if (latest.id) { appState.ui = appState.ui || {}; appState.ui.cloudRecordId = latest.id; saveToLocalStorage(); }
-            setLog('Загружено');
-          } else setLog('Нет данных payload у последней записи');
-        } else setLog('Нет записей');
-      } catch (e) { setLog('Ошибка сети: ' + String(e)); }
-      finally { setLoading(false); }
-    });
+    // Кнопка загрузки последней удалена из UI
 
     async function refreshCloudList() {
       const url = ensureUrl(); if (!url) return;
@@ -539,7 +528,7 @@ function setupEventListeners() {
       finally { setLoading(false); }
     }
 
-    cloudRefreshListBtn?.addEventListener('click', refreshCloudList);
+    // Кнопка обновления списка удалена из UI
     cloudLoadByIdBtn?.addEventListener('click', () => {
       const id = cloudLoadIdInput.value.trim(); if (!id) { alert('Введите ID'); return; }
       loadById(id);
