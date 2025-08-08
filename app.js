@@ -307,8 +307,33 @@ function setupEventListeners() {
   if (createNewBtn) {
     createNewBtn.addEventListener('click', function() {
       console.log('Создание нового плана...');
-      appState = { profile: {}, selectedSkills: {}, developmentPlan: {}, progress: {} };
+      // Сохраним выбранную тему, остальное сбросим
+      const preservedTheme = appState?.ui?.theme;
+      appState = { profile: {}, selectedSkills: {}, developmentPlan: {}, progress: {}, ui: {} };
+      if (preservedTheme) appState.ui.theme = preservedTheme;
+      // Очистим localStorage и сразу перезапишем свежим состоянием
+      try { localStorage.removeItem('iprAppState'); } catch (_) {}
+      try { saveToLocalStorage(); } catch (_) {}
+      // Очистим поля UI
+      try {
+        const clearVal = (id) => { const el = document.getElementById(id); if (el) el.value = ''; };
+        clearVal('fullName');
+        clearVal('position');
+        clearVal('grade');
+        clearVal('track');
+        clearVal('skillsSearch');
+        clearVal('inlineCloudPlanTitleInput');
+        clearVal('quickLoadIdInput');
+        const onlySel = document.getElementById('showOnlySelected'); if (onlySel) onlySel.checked = false;
+        const inlineId = document.getElementById('inlineCloudCurrentRecord'); if (inlineId) inlineId.innerHTML = '';
+        const cloudInline = document.getElementById('cloudCurrentRecordInline'); if (cloudInline) cloudInline.innerHTML = '';
+        updateSelectedCounter();
+      } catch (_) {}
+      // Спрячем кнопку "Продолжить существующий"
+      const cont = document.getElementById('continuePlan'); if (cont) cont.style.display = 'none';
+      // Перейдём к профилю и перерисуем пустые разделы
       showSection('profileSection');
+      renderSkills();
     });
   }
   
