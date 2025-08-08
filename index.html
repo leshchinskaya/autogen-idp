@@ -208,6 +208,7 @@
                             <button class="btn btn--outline btn--sm" id="generateProgressPromptBtn">🧠 Промт: автоген Итога прогресса</button>
                             <button class="btn btn--outline btn--sm" id="exportCSVProgress">📊 CSV</button>
                             <button class="btn btn--outline btn--sm" id="importCSVProgressBtn">⬆️ Обработать другой ИПР</button>
+                            <button class="btn btn--outline btn--sm" id="cloudSyncBtn">☁️ Sheets</button>
                           </div>
                         </div>
                         <input type="file" id="importCSVProgressFile" accept=".csv" style="display:none;" />
@@ -410,6 +411,32 @@
                 <button class="btn btn--primary" id="copyProgressPromptBtn">Скопировать</button>
             </div>
         </div>
+    </div>
+
+    <!-- Cloud Sync Modal -->
+    <div id="cloudModal" class="modal" aria-hidden="true" style="display:none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="cloudModalTitle">
+        <div class="modal__header">
+          <h3 id="cloudModalTitle">Облачная синхронизация (Google Sheets)</h3>
+          <button class="btn btn--outline btn--sm" id="closeCloudModal">Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <div class="form-group">
+            <label class="form-label">URL Web App (Apps Script)</label>
+            <input type="text" id="cloudUrlInput" class="form-control" placeholder="https://script.google.com/macros/s/DEPLOYMENT_ID/exec" />
+          </div>
+          <div class="status status--info" style="margin-bottom:12px;">Сохраняется весь текущий план/прогресс как единый JSON.
+            <div id="cloudCurrentRecord" style="margin-top:6px; font-size:12px; color:var(--color-text-secondary);"></div>
+          </div>
+          <div class="export-buttons">
+            <button class="btn btn--primary btn--sm" id="cloudSaveNewBtn">Сохранить как новую запись</button>
+            <button class="btn btn--secondary btn--sm" id="cloudUpdateBtn">Обновить текущую запись</button>
+            <button class="btn btn--outline btn--sm" id="cloudLoadLatestBtn">Загрузить последнюю</button>
+          </div>
+          <div id="cloudLog" style="margin-top:12px; font-size:12px; color:var(--color-text-secondary);"></div>
+        </div>
+      </div>
     </div>
 
     <script src="app.js"></script>

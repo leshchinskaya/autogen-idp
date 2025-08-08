@@ -327,6 +327,7 @@ function setupEventListeners() {
   const exportCSVProgressBtn = document.getElementById('exportCSVProgress');
   const importCSVProgressBtn = document.getElementById('importCSVProgressBtn');
   const importCSVProgressFile = document.getElementById('importCSVProgressFile');
+  const cloudSyncBtn = document.getElementById('cloudSyncBtn');
   const analysisCsvFile = document.getElementById('analysisCsvFile');
   const analysisSkillSelect = document.getElementById('analysisSkillSelect');
   const planAnalysisSkillSelect = document.getElementById('planAnalysisSkillSelect');
@@ -365,6 +366,87 @@ function setupEventListeners() {
       if (e.target && e.target.hasAttribute('data-close-modal')) toggleImportModal(false);
     });
     importJsonConfirmBtn.addEventListener('click', importFromJson);
+  }
+
+  // Cloud modal
+  const cloudModal = document.getElementById('cloudModal');
+  const closeCloudModal = document.getElementById('closeCloudModal');
+  const cloudUrlInput = document.getElementById('cloudUrlInput');
+  const cloudSaveNewBtn = document.getElementById('cloudSaveNewBtn');
+  const cloudUpdateBtn = document.getElementById('cloudUpdateBtn');
+  const cloudLoadLatestBtn = document.getElementById('cloudLoadLatestBtn');
+  const cloudLog = document.getElementById('cloudLog');
+  const cloudCurrentRecord = document.getElementById('cloudCurrentRecord');
+  if (cloudSyncBtn && cloudModal && closeCloudModal && cloudUrlInput && cloudSaveNewBtn && cloudUpdateBtn && cloudLoadLatestBtn && cloudLog) {
+    cloudSyncBtn.addEventListener('click', () => {
+      cloudUrlInput.value = appState.ui?.cloudUrl || '';
+      cloudCurrentRecord.textContent = appState.ui?.cloudRecordId ? `Текущая запись: ${appState.ui.cloudRecordId}` : 'Текущая запись: отсутствует';
+      cloudLog.textContent = '';
+      cloudModal.style.display = 'block';
+      cloudModal.setAttribute('aria-hidden', 'false');
+    });
+    closeCloudModal.addEventListener('click', () => {
+      cloudModal.style.display = 'none';
+      cloudModal.setAttribute('aria-hidden', 'true');
+    });
+    cloudModal.addEventListener('click', (e) => {
+      if (e.target && e.target.hasAttribute('data-close-modal')) {
+        cloudModal.style.display = 'none';
+        cloudModal.setAttribute('aria-hidden', 'true');
+      }
+    });
+    const setLog = (msg) => cloudLog.textContent = msg;
+    const ensureUrl = () => {
+      const url = cloudUrlInput.value.trim();
+      if (!url) { alert('Укажите URL Apps Script Web App'); return null; }
+      appState.ui = appState.ui || {}; appState.ui.cloudUrl = url; saveToLocalStorage();
+      return url;
+    };
+    cloudSaveNewBtn.addEventListener('click', async () => {
+      const url = ensureUrl(); if (!url) return;
+      try {
+        const form = new URLSearchParams();
+        form.set('action', 'append');
+        form.set('payload', JSON.stringify(appState));
+        const res = await fetch(url, { method: 'POST', body: form });
+        const json = await res.json();
+        if (json.ok && json.id) {
+          appState.ui = appState.ui || {}; appState.ui.cloudRecordId = json.id; saveToLocalStorage();
+          cloudCurrentRecord.textContent = `Текущая запись: ${json.id}`;
+          setLog('Сохранено как новая запись');
+        } else setLog('Ошибка: ' + JSON.stringify(json));
+      } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+    });
+    cloudUpdateBtn.addEventListener('click', async () => {
+      const url = ensureUrl(); if (!url) return;
+      const id = appState.ui?.cloudRecordId; if (!id) { alert('Нет текущей записи (сначала сохраните как новую)'); return; }
+      try {
+        const form = new URLSearchParams();
+        form.set('action', 'update');
+        form.set('id', id);
+        form.set('payload', JSON.stringify(appState));
+        const res = await fetch(url, { method: 'POST', body: form });
+        const json = await res.json();
+        setLog(json.ok ? 'Обновлено' : ('Ошибка: ' + JSON.stringify(json)));
+      } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+    });
+    cloudLoadLatestBtn.addEventListener('click', async () => {
+      const url = ensureUrl(); if (!url) return;
+      try {
+        const res = await fetch(url);
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.data) && json.data.length) {
+          const latest = json.data[json.data.length - 1];
+          if (latest && latest.payload) {
+            appState = latest.payload; saveToLocalStorage();
+            renderSkills(); renderPlan(); renderProgress();
+            cloudCurrentRecord.textContent = latest.id ? `Текущая запись: ${latest.id}` : 'Текущая запись: неизвестна';
+            if (latest.id) { appState.ui = appState.ui || {}; appState.ui.cloudRecordId = latest.id; saveToLocalStorage(); }
+            setLog('Загружено');
+          } else setLog('Нет данных payload у последней записи');
+        } else setLog('Нет записей');
+      } catch (e) { setLog('Ошибка сети: ' + String(e)); }
+    });
   }
 
   // Кликабельные шаги прогресса (навигация по табам)
