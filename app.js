@@ -336,6 +336,7 @@ function setupEventListeners() {
   const importCSVProgressBtn = document.getElementById('importCSVProgressBtn');
   const importCSVProgressFile = document.getElementById('importCSVProgressFile');
   const cloudSyncBtn = document.getElementById('cloudSyncBtn');
+  const cloudQuickSaveBtn = document.getElementById('cloudQuickSaveBtn');
   const analysisCsvFile = document.getElementById('analysisCsvFile');
   const analysisSkillSelect = document.getElementById('analysisSkillSelect');
   const planAnalysisSkillSelect = document.getElementById('planAnalysisSkillSelect');
@@ -374,6 +375,45 @@ function setupEventListeners() {
       if (e.target && e.target.hasAttribute('data-close-modal')) toggleImportModal(false);
     });
     importJsonConfirmBtn.addEventListener('click', importFromJson);
+  }
+
+  // Быстрое сохранение в Sheets (обновление текущей записи)
+  if (cloudQuickSaveBtn) {
+    cloudQuickSaveBtn.addEventListener('click', async () => {
+      const url = CLOUD_APPS_SCRIPT_URL;
+      const id = appState.ui?.cloudRecordId;
+      if (!id) {
+        alert('Нет текущей записи. Сначала сохраните любую запись через Sheets.');
+        return;
+      }
+      try {
+        cloudQuickSaveBtn.disabled = true;
+        cloudQuickSaveBtn.textContent = '💾 Saving…';
+        const form = new URLSearchParams();
+        form.set('action', 'update');
+        form.set('id', id);
+        const payload = { ...appState };
+        const titleVal = (appState.ui?.cloudPlanTitle || '').trim();
+        if (titleVal) {
+          payload.title = titleVal;
+          payload.nameidp = titleVal;
+          form.set('nameidp', titleVal);
+        }
+        form.set('payload', JSON.stringify(payload));
+        const res = await fetch(url, { method: 'POST', body: form });
+        const json = await res.json();
+        if (!(json && json.ok)) {
+          alert('Ошибка сохранения: ' + JSON.stringify(json));
+        } else {
+          cloudQuickSaveBtn.textContent = '✅ Saved';
+          setTimeout(() => (cloudQuickSaveBtn.textContent = '💾 Save'), 1200);
+        }
+      } catch (e) {
+        alert('Ошибка сети: ' + String(e));
+      } finally {
+        cloudQuickSaveBtn.disabled = false;
+      }
+    });
   }
 
   // Cloud modal
