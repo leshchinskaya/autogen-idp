@@ -21,6 +21,7 @@
                 <div class="flex items-center justify-between">
                     <h1 class="logo">Сегодня выполнена еще одна крутая задача</h1>
                     <nav class="nav-links">
+                        <button class="btn btn--outline btn--sm" id="infoBtn">ℹ️ Информация</button>
                         <button class="btn btn--outline btn--sm" id="darkModeToggle">🌙 Тёмная тема</button>
                     </nav>
                 </div>
@@ -450,6 +451,30 @@
               </div>
               <div id="cloudList" style="margin-top:8px; max-height: 320px; overflow:auto;"></div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="infoModal" class="modal" aria-hidden="true" style="display:none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
+        <div class="modal__header">
+          <h3 id="infoModalTitle">Информация</h3>
+          <button class="btn btn--outline btn--sm" id="closeInfoModal">Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <div class="status status--info" style="margin-bottom:12px;">Краткая справка по возможностям приложения</div>
+          <div style="display:grid; gap:8px;">
+            <div><strong>Создание ИПР</strong>: Заполните профиль, выберите навыки из CSV, укажите текущий/целевой уровни.</div>
+            <div><strong>Генерация задач</strong>: Сгенерируйте промт, получите JSON от ИИ и импортируйте его в план.</div>
+            <div><strong>Редактирование плана</strong>: Меняйте названия/описания задач, длительность, связанные навыки.</div>
+            <div><strong>Старт прогресса</strong>: Отслеживайте выполнение на доске и в списке, добавляйте комментарии, меняйте статусы.</div>
+            <div><strong>Экспорт/импорт</strong>: PDF и CSV экспорты, импорт CSV прогресса.</div>
+            <div><strong>Облачная синхронизация</strong>: Сохранение/обновление/загрузка записей в Google Sheets (единый JSON).</div>
+            <div><strong>Итог прогресса</strong>: Автоген промта для краткого саммари прогресса.</div>
+            <div><strong>Аналитика</strong>: Графики по текущему плану и по истории роста (при наличии CSV).</div>
           </div>
         </div>
       </div>

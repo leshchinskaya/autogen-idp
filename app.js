@@ -258,6 +258,7 @@ function setupEventListeners() {
   const createNewBtn = document.getElementById('createNewPlan');
   const continueBtn = document.getElementById('continuePlan');
   const themeBtn = document.getElementById('darkModeToggle');
+  const infoBtn = document.getElementById('infoBtn');
   
   if (createNewBtn) {
     createNewBtn.addEventListener('click', function() {
@@ -285,6 +286,9 @@ function setupEventListeners() {
 
   if (themeBtn) {
     themeBtn.addEventListener('click', toggleTheme);
+  }
+  if (infoBtn) {
+    infoBtn.addEventListener('click', () => toggleInfoModal(true));
   }
 
   // Профиль
@@ -556,6 +560,14 @@ function setupEventListeners() {
   });
 
   // Prompt modal controls
+  const infoModal = document.getElementById('infoModal');
+  const closeInfoModalBtn = document.getElementById('closeInfoModal');
+  if (infoModal && closeInfoModalBtn) {
+    closeInfoModalBtn.addEventListener('click', () => toggleInfoModal(false));
+    infoModal.addEventListener('click', (e) => {
+      if (e.target && e.target.hasAttribute('data-close-modal')) toggleInfoModal(false);
+    });
+  }
   const promptModal = document.getElementById('promptModal');
   const closePromptModalBtn = document.getElementById('closePromptModal');
   if (promptModal && closePromptModalBtn) {
@@ -1169,6 +1181,13 @@ function buildPrompt(profile, selections) {
 
 function togglePromptModal(open) {
   const modal = document.getElementById('promptModal');
+  if (!modal) return;
+  modal.style.display = open ? 'block' : 'none';
+  modal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+function toggleInfoModal(open) {
+  const modal = document.getElementById('infoModal');
   if (!modal) return;
   modal.style.display = open ? 'block' : 'none';
   modal.setAttribute('aria-hidden', open ? 'false' : 'true');
