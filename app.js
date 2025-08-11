@@ -15,17 +15,22 @@ function slugify(text) {
 
 function extractActivitiesFromDescription(desc) {
   if (!desc) return [];
-  const lines = String(desc)
+  // Нормализуем инлайн‑буллеты вида "  - item  - item" в многострочные
+  let normalized = String(desc)
+    .replace(/[\u2022\u2023\u25E6]/g, '-')            // точки → дефис
+    .replace(/\s{2,}-\s+/g, '\n- ')                   // два+ пробела + дефис ⇒ перенос строки
+    .replace(/\s*;\s*-\s+/g, '\n- ');                 // ; -  ⇒ перенос строки
+
+  const lines = normalized
     .split(/\r?\n/)
     .map(l => l.trim())
     .filter(l => l.length > 0);
-  // Берём строки, начинающиеся с буллета или тире, иначе используем все строки кроме первой как активности
+  // Берём строки с маркером, иначе всё после первой строки как подпункты
   const bulletLines = lines.filter(l => /^([•\-\*]|\u2022)/.test(l));
   const cleaned = (bulletLines.length > 0 ? bulletLines : lines.slice(1))
-    .map(l => l.replace(/^([•\-\*]|\u2022)\s*/,'').trim())
+    .map(l => l.replace(/^([•\-\*]|\u2022)\s*/, '').trim())
     .filter(Boolean);
-  // Если ничего не вышло — хотя бы одна активность = сама сводка
-  return cleaned.length > 0 ? cleaned : [lines[0]];
+  return cleaned.length > 0 ? cleaned : (lines.length ? [lines[0]] : []);
 }
 
 function buildSkillsDataFromRows(rows) {
@@ -130,6 +135,540 @@ async function loadSkillsFromCSV() {
       });
     }
   }
+}
+
+// -------- Knowledge Base Picker: parse markdown tables into tasks --------
+async function toggleKbPicker(show) {
+  const modal = document.getElementById('kbPickerModal');
+  if (!modal) return;
+  if (show) {
+    await renderKbPicker();
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+  } else {
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+async function renderKbPicker() {
+  const filesList = document.getElementById('kbFilesList');
+  const parsedTasks = document.getElementById('kbParsedTasks');
+  const targetSelect = document.getElementById('kbTargetSkillSelect');
+  const searchInput = document.getElementById('kbSearchInput');
+  if (!filesList || !parsedTasks || !targetSelect) return;
+
+  // Fill skills select from current plan skills; fallback to catalog
+  const planEntries = Object.entries(appState.developmentPlan || {});
+  const planOptions = planEntries.map(([id, p]) => ({ id, name: p.name }));
+  let options = planOptions;
+  if (options.length === 0) {
+    // fallback: all catalog skills
+    const catalog = [];
+    Object.values(skillsData.skills || {}).forEach(arr => (arr || []).forEach(s => catalog.push({ id: s.id, name: s.name })));
+    options = catalog;
+  }
+  const cur = targetSelect.value;
+  targetSelect.innerHTML = '<option value="">Выберите навык</option>' + options.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
+  if (cur) targetSelect.value = cur;
+  if (!targetSelect.value && options.length > 0) targetSelect.value = options[0].id;
+
+  // Try root JSON first to allow removing База_знаний_ИПР/
+  try {
+    const r = await fetch('kb_tasks.json', { cache: 'no-store' });
+    if (r.ok) {
+      const kbJsonForModal = await r.json();
+      if (Array.isArray(kbJsonForModal)) {
+        filesList.innerHTML = '<div class="status status--info">Загружено из kb_tasks.json</div>';
+        const parseAndRenderJson = async () => {
+          const q = (searchInput?.value || '').trim().toLowerCase();
+          const all = kbJsonForModal.map(t => ({ ...t, __source: t.category || 'kb_tasks.json' }));
+          const filtered = q ? all.filter(t => (t.goal||t.title||'').toLowerCase().includes(q) || (t.description||'').toLowerCase().includes(q)) : all;
+          parsedTasks.innerHTML = filtered.length ? `
+            <div style="display:grid; gap:8px; margin-top:8px;">
+              ${filtered.map((t, idx) => `
+                <div class=\"kb-task\" data-idx=\"${idx}\" style=\"border:1px solid var(--color-card-border); border-radius:8px; background: var(--color-surface);\">\
+                  <div class=\"kb-task-header\" style=\"display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px; cursor:pointer;\">\
+                    <div style=\"display:flex; align-items:flex-start; gap:12px; min-width:0; flex:1;\">\
+                      <input type=\"checkbox\" class=\"kb-task-chk\" data-idx=\"${idx}\" checked>\
+                      <div style=\"min-width:0; display:flex; flex-direction:column; gap:6px;\">\
+                        <strong class=\"activity-name\" style=\"white-space:normal;\">${escapeHtml(t.goal || t.title || '')}</strong>\
+                        <div style=\"display:flex; gap:8px; flex-wrap:wrap;\">\
+                          <span class=\"tag\" title=\"Категория\">${escapeHtml(String(t.category || 'kb_tasks.json'))}</span>\
+                        </div>\
+                      </div>\
+                    </div>\
+                    <span class=\"kb-task-toggle\" aria-hidden=\"true\">▾</span>\
+                  </div>\
+                  <div class=\"kb-task-body\" style=\"display:none; padding:12px; border-top:1px solid var(--color-card-border);\">\
+                    ${t.description ? `<div class=\\\"activity-desc\\\">${linkify(t.description)}</div>` : ''}\
+                    ${t.criteria ? `<div class=\\\"activity-expected\\\"><strong>Критерии:</strong> ${linkify(t.criteria)}</div>` : ''}\
+                  </div>\
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div class="status status--info">Нет задач по выбранным файлам/фильтру</div>';
+          parsedTasks.querySelectorAll('.kb-task-header').forEach(h => {
+            h.addEventListener('click', (e) => {
+              if (e.target && (e.target.matches('input') || e.target.closest('input'))) return;
+              const body = h.parentElement.querySelector('.kb-task-body');
+              const icon = h.querySelector('.kb-task-toggle');
+              if (!body) return;
+              const open = body.style.display !== 'none';
+              body.style.display = open ? 'none' : 'block';
+              if (icon) icon.textContent = open ? '▾' : '▴';
+            });
+          });
+          modalKbState.tasks = filtered;
+        };
+        if (searchInput) searchInput.oninput = () => { clearTimeout(window.__kbDeb); window.__kbDeb = setTimeout(parseAndRenderJson, 200); };
+        await parseAndRenderJson();
+        return; // do not proceed to legacy manifest
+      }
+    }
+  } catch (_) {}
+
+  // Load manifest of KB files (static list)
+  let manifest = [];
+  try {
+    const resp = await fetch('База_знаний_ИПР/kb_manifest.json', { cache: 'no-store' });
+    if (resp.ok) manifest = await resp.json();
+  } catch (_) {}
+  if (!Array.isArray(manifest) || manifest.length === 0) {
+    filesList.innerHTML = '<div class="status status--warning">Не удалось загрузить список файлов БЗ</div>';
+    return;
+  }
+
+  // Render file list
+  filesList.innerHTML = manifest.map((f, i) => `
+    <label class="checkbox" style="display:flex; align-items:center; gap:8px;">
+      <input type="checkbox" class="kb-file-chk" data-path="${f.path}" checked>
+      <span>${escapeHtml(f.category)}</span>
+      <code style="font-size:11px; opacity:0.8;">${f.path.split('/').pop()}</code>
+    </label>
+  `).join('');
+
+  // Parse selected files and show tasks
+  const parseAndRender = async () => {
+    const paths = Array.from(filesList.querySelectorAll('.kb-file-chk'))
+      .filter(cb => cb.checked)
+      .map(cb => cb.getAttribute('data-path'));
+    const all = [];
+    for (const p of paths) {
+      try {
+        const resp = await fetch(p, { cache: 'no-store' });
+        if (!resp.ok) continue;
+        const md = await resp.text();
+        const tasks = parseMarkdownTableToTasks(md);
+        tasks.forEach(t => all.push({ ...t, __source: p }));
+      } catch (_) {}
+    }
+    const q = (searchInput?.value || '').trim().toLowerCase();
+    const filtered = q ? all.filter(t => t.title.toLowerCase().includes(q) || (t.description||'').toLowerCase().includes(q)) : all;
+    parsedTasks.innerHTML = filtered.length ? `
+      <div style="display:grid; gap:8px; margin-top:8px;">
+        ${filtered.map((t, idx) => `
+          <div class=\"kb-task\" data-idx=\"${idx}\" style=\"border:1px solid var(--color-card-border); border-radius:8px; background: var(--color-surface);\">
+            <div class=\"kb-task-header\" style=\"display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px; cursor:pointer;\">
+              <div style=\"display:flex; align-items:flex-start; gap:12px; min-width:0; flex:1;\">
+                <input type=\"checkbox\" class=\"kb-task-chk\" data-idx=\"${idx}\" checked>
+                <div style=\"min-width:0; display:flex; flex-direction:column; gap:6px;\">
+                  <strong class=\"activity-name\" style=\"white-space:normal;\">${escapeHtml(t.goal || t.title)}</strong>
+                  <div style=\"display:flex; gap:8px; flex-wrap:wrap;\">
+                    <span class=\"tag\" title=\"Источник\">${t.__source.split('/').slice(-2).join('/')}</span>
+                  </div>
+                </div>
+              </div>
+              <span class=\"kb-task-toggle\" aria-hidden=\"true\">▾</span>
+            </div>
+            <div class=\"kb-task-body\" style=\"display:none; padding:12px; border-top:1px solid var(--color-card-border);\">
+              ${t.description ? `<div class=\\\"activity-desc\\\">${linkify(t.description)}</div>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '<div class="status status--info">Нет задач по выбранным файлам/фильтру</div>';
+    // Accordion behavior + stash for import
+    parsedTasks.querySelectorAll('.kb-task-header').forEach(h => {
+      h.addEventListener('click', (e) => {
+        if (e.target && (e.target.matches('input') || e.target.closest('input'))) return;
+        const body = h.parentElement.querySelector('.kb-task-body');
+        const icon = h.querySelector('.kb-task-toggle');
+        if (!body) return;
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : 'block';
+        if (icon) icon.textContent = open ? '▾' : '▴';
+      });
+    });
+    modalKbState.tasks = filtered;
+  };
+
+  filesList.querySelectorAll('.kb-file-chk').forEach(cb => cb.addEventListener('change', parseAndRender));
+  if (searchInput) searchInput.oninput = () => { clearTimeout(window.__kbDeb); window.__kbDeb = setTimeout(parseAndRender, 200); };
+  await parseAndRender();
+}
+
+const modalKbState = { tasks: [] };
+
+function parseMarkdownTableToTasks(md) {
+  // Expect a markdown table with columns: Навык | Уровень | Описание | Критерий выполнения | Цель | Время выполнения | Комментарий
+  const lines = String(md).split(/\r?\n/);
+  const headerIdx = lines.findIndex(l => /\|\s*Навык\s*\|/i.test(l) && /\|\s*Описание\s*\|/i.test(l));
+  if (headerIdx < 0) return [];
+  const rows = [];
+  for (let i = headerIdx + 2; i < lines.length; i += 1) { // skip header and separator
+    const l = lines[i];
+    if (!l || !l.includes('|')) continue;
+    if (/^\s*$/.test(l)) continue;
+    rows.push(l);
+  }
+  const tasks = [];
+  for (const row of rows) {
+    // split markdown table row by pipes, preserve inner pipes in links by naive approach
+    const cols = row.split('|').map(c => c.trim());
+    if (cols.length < 4) continue;
+    const skillName = cols[1] || '';
+    const level = parseInt(cols[2] || '1') || 1;
+    const description = (cols[3] || '').replace(/^`|`$/g,'');
+    const criteria = cols[4] || '';
+    const goal = cols[5] || '';
+    const title = `${skillName} — задача из БЗ`;
+    // explode description into multiple tasks if it contains enumerated list segments
+    const subActs = extractActivitiesFromDescription(description);
+    const perAct = subActs.map((text, idx) => ({
+      id: `${slugify(skillName)}_kb_${idx}_${Math.random().toString(36).slice(2,7)}`,
+      title: text,
+      description: text,
+      criteria,
+      goal,
+    level,
+    skillName
+    }));
+    if (perAct.length === 0) {
+    perAct.push({ id: `${slugify(skillName)}_kb_${Math.random().toString(36).slice(2,7)}`, title, description, criteria, goal, level, skillName });
+    }
+    tasks.push(...perAct);
+  }
+  return tasks;
+}
+
+// Embedded KB picker inside Skills tab
+async function renderSkillsKbPicker() {
+  const filesList = document.getElementById('skillsKbFilesList');
+  const parsedTasks = document.getElementById('skillsKbParsedTasks');
+  const targetSelect = document.getElementById('skillsKbTargetSkillSelect');
+  const searchInput = document.getElementById('skillsKbSearchInput');
+  const filterSkillSelect = document.getElementById('skillsKbFilterSkillSelect');
+  const filterLevelSelect = document.getElementById('skillsKbFilterLevelSelect');
+  const autoBindChk = document.getElementById('skillsKbAutoBind');
+  if (!filesList || !parsedTasks || !targetSelect) return;
+
+  // Fill skills select with full catalog
+  const catalog = [];
+  Object.values(skillsData.skills || {}).forEach(arr => (arr || []).forEach(s => catalog.push({ id: s.id, name: s.name })));
+  // dedupe by id and sort by name
+  const seen = new Set();
+  const options = catalog.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; })
+    .sort((a,b) => a.name.localeCompare(b.name, 'ru'));
+  const cur = targetSelect.value;
+  targetSelect.innerHTML = '<option value="">Выберите навык</option>' + options.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
+  if (autoBindChk && autoBindChk.checked) {
+    targetSelect.value = '';
+  } else {
+    if (cur) targetSelect.value = cur;
+    if (!targetSelect.value && options.length > 0) targetSelect.value = options[0].id;
+  }
+
+  // Mutual control: auto-bind <-> manual target selection
+  if (autoBindChk) {
+    autoBindChk.onchange = () => {
+      if (autoBindChk.checked) targetSelect.value = '';
+    };
+  }
+  if (targetSelect) {
+    targetSelect.onchange = () => {
+      if (targetSelect.value) {
+        if (autoBindChk) autoBindChk.checked = false;
+      }
+    };
+  }
+
+  // Prefer unified JSON if present (try root first), fallback to legacy markdown manifest
+  let kbJson = null;
+  try {
+    let r = await fetch('kb_tasks.json', { cache: 'no-store' });
+    if (!r.ok) {
+      r = await fetch('База_знаний_ИПР/kb_tasks.json', { cache: 'no-store' });
+    }
+    if (r.ok) kbJson = await r.json();
+  } catch (_) {}
+
+  let manifest = [];
+  if (!kbJson) {
+    try {
+      const resp = await fetch('База_знаний_ИПР/kb_manifest.json', { cache: 'no-store' });
+      if (resp.ok) manifest = await resp.json();
+    } catch (_) {}
+    if (!Array.isArray(manifest) || manifest.length === 0) {
+      filesList.innerHTML = '<div class="status status--warning">Не удалось загрузить Базу знаний</div>';
+      return;
+    }
+    // Legacy UI: file list
+    filesList.innerHTML = manifest.map((f) => `
+      <label class="checkbox" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" class="skills-kb-file-chk" data-path="${f.path}" checked>
+        <span>${escapeHtml(f.category)}</span>
+        <code style="font-size:11px; opacity:0.8;">${f.path.split('/').pop()}</code>
+      </label>
+    `).join('');
+  } else {
+    // New UI: categories from JSON as checkboxes
+    const categories = Array.from(new Set((kbJson || []).map(t => t.category || 'Без категории'))).sort();
+    // Initialize persisted selected categories if absent
+    if (!skillsKbState.selCats) {
+      skillsKbState.selCats = new Set(categories);
+    } else {
+      // Ensure newly added categories are auto-selected (UI for categories is hidden)
+      categories.forEach(cat => skillsKbState.selCats.add(cat));
+      // Optionally, drop removed categories
+      skillsKbState.selCats = new Set(Array.from(skillsKbState.selCats).filter(cat => categories.includes(cat)));
+    }
+    filesList.innerHTML = categories.map(cat => `
+      <label class="checkbox" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" class="skills-kb-cat-chk" data-cat="${escapeHtml(cat)}" ${skillsKbState.selCats.has(cat) ? 'checked' : ''}>
+        <span>${escapeHtml(cat)}</span>
+      </label>
+    `).join('');
+  }
+
+  const parseAndRender = async () => {
+    let all = [];
+    if (kbJson) {
+      // Filter by selected categories
+      const selectedCats = new Set(
+        Array.from(filesList.querySelectorAll('.skills-kb-cat-chk'))
+          .filter(cb => cb.checked)
+          .map(cb => cb.getAttribute('data-cat'))
+      );
+      if (selectedCats.size === 0) {
+        // if user unchecked all, show nothing
+        all = [];
+      } else {
+        all = (kbJson || [])
+          .filter(t => selectedCats.has(t.category || 'Без категории'))
+          .map(t => ({
+            __source: 'kb_tasks.json',
+            skillName: t.skillName || '',
+            level: t.level || 1,
+            durationWeeks: (typeof t.durationWeeks === 'number') ? t.durationWeeks : null,
+            goal: t.goal || '',
+            description: t.description || '',
+            criteria: t.criteria || '',
+            title: (t.goal || (t.description || '').split(/\r?\n/)[0] || '').trim()
+          }));
+      }
+      // Persist selected cats in state
+      skillsKbState.selCats = selectedCats;
+    } else {
+      const paths = Array.from(filesList.querySelectorAll('.skills-kb-file-chk'))
+        .filter(cb => cb.checked)
+        .map(cb => cb.getAttribute('data-path'));
+      for (const p of paths) {
+        try {
+          const resp = await fetch(p, { cache: 'no-store' });
+          if (!resp.ok) continue;
+          const md = await resp.text();
+          const tasks = parseMarkdownTableToTasks(md);
+          tasks.forEach(t => all.push({ ...t, __source: p }));
+        } catch (_) {}
+      }
+    }
+    // Populate filter by skill (from KB) options
+    if (filterSkillSelect) {
+      const prev = filterSkillSelect.value || '';
+      const uniqueSkills = Array.from(new Set(all.map(t => (t.skillName || '').trim()).filter(Boolean))).sort();
+      const optsHtml = ['<option value="">Все навыки</option>']
+        .concat(uniqueSkills.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`))
+        .join('');
+      filterSkillSelect.innerHTML = optsHtml;
+      if (prev && uniqueSkills.some(n => n === prev)) {
+        filterSkillSelect.value = prev;
+      }
+    }
+
+    const q = (searchInput?.value || '').trim().toLowerCase();
+    const filterSkill = (filterSkillSelect?.value || '').trim().toLowerCase();
+    const filterLevel = parseInt(filterLevelSelect?.value || '') || null;
+    const filtered = all.filter(t => {
+      const matchesText = !q || t.title.toLowerCase().includes(q) || (t.description||'').toLowerCase().includes(q);
+      const matchesSkill = !filterSkill || (t.skillName && t.skillName.toLowerCase() === filterSkill);
+      const matchesLevel = !filterLevel || (parseInt(t.level || 0) === filterLevel);
+      return matchesText && matchesSkill && matchesLevel;
+    });
+    parsedTasks.innerHTML = filtered.length ? `
+      <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; margin-top:8px;">
+        ${filtered.map((t, idx) => `
+          <div class="kb-task" data-idx="${idx}" style="border:1px solid var(--color-card-border); border-radius:8px; background: var(--color-surface); display:flex; flex-direction:column; overflow:hidden;">
+            <div class="kb-task-header" style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px; cursor:pointer;">
+              <div style="display:flex; align-items:flex-start; gap:12px; min-width:0; flex:1;">
+                <input type="checkbox" class="kb-task-chk" data-kbid="${(t.__source + '|' + (t.skillName||'') + '|' + (t.title||'') + '|' + (t.description||'') + '|' + (t.criteria||'')).replace(/"/g,'&quot;')}">
+                <div style="min-width:0; display:flex; flex-direction:column; gap:6px;">
+                  <strong class="activity-name" style="white-space:normal;">${escapeHtml(t.goal || t.title)}</strong>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    ${t.skillName ? `<span class="tag tag--skill" title="Навык">${escapeHtml(t.skillName)}</span>` : ''}
+                    <span class="tag tag--level" title="Уровень">Уровень: ${(['','Базовые знания','Уверенные значения','Глубокие знания','Любая сложность'])[Number.isFinite(t.level) ? t.level : 1] || ('Уровень ' + (Number.isFinite(t.level) ? t.level : 1))}</span>
+                    ${Number.isFinite(t.durationWeeks) && t.durationWeeks > 0 ? `<span class="tag tag--duration" title="Длительность">~${t.durationWeeks} нед.</span>` : ''}
+                  </div>
+                </div>
+              </div>
+              <span class="kb-task-toggle" aria-hidden="true">▴</span>
+            </div>
+            <div class="kb-task-body" style="display:block; padding:12px; border-top:1px solid var(--color-card-border); overflow:auto;">
+              ${t.description ? `<div class=\"activity-desc\">${linkify(t.description)}</div>` : ''}
+              ${t.criteria ? `<div class=\"activity-expected\"><strong>Критерии:</strong> ${linkify(t.criteria)}</div>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '<div class="status status--info">Нет задач по выбранным файлам/фильтру</div>';
+    // Accordion behavior
+    parsedTasks.querySelectorAll('.kb-task-header').forEach(h => {
+      h.addEventListener('click', (e) => {
+        if (e.target && (e.target.matches('input') || e.target.closest('input'))) return;
+        const body = h.parentElement.querySelector('.kb-task-body');
+        const icon = h.querySelector('.kb-task-toggle');
+        if (!body) return;
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : 'block';
+        if (icon) icon.textContent = open ? '▾' : '▴';
+      });
+    });
+    // Persist selection across re-renders (approximate via kbId recompute)
+    parsedTasks.querySelectorAll('.kb-task-chk').forEach(cb => {
+      const id = cb.getAttribute('data-kbid');
+      if (id && skillsKbState.selected && skillsKbState.selected.has(id)) cb.checked = true;
+      cb.addEventListener('change', () => {
+        const id2 = cb.getAttribute('data-kbid'); if (!id2) return;
+        if (!skillsKbState.selected) skillsKbState.selected = new Set();
+        if (cb.checked) skillsKbState.selected.add(id2); else skillsKbState.selected.delete(id2);
+      });
+    });
+    // stash
+    skillsKbState.tasks = filtered;
+  };
+
+  filesList.querySelectorAll('.skills-kb-file-chk').forEach(cb => cb.addEventListener('change', parseAndRender));
+  if (searchInput) searchInput.oninput = () => { clearTimeout(window.__kbDeb2); window.__kbDeb2 = setTimeout(parseAndRender, 200); };
+  if (filterSkillSelect) filterSkillSelect.onchange = () => parseAndRender();
+  if (filterLevelSelect) filterLevelSelect.onchange = () => parseAndRender();
+  const addBtn = document.getElementById('skillsKbAddSelectedBtn');
+  if (addBtn) addBtn.onclick = () => addSelectedSkillsKbTasks();
+  const deselectBtn = document.getElementById('skillsKbDeselectAllBtn');
+  if (deselectBtn) deselectBtn.onclick = () => {
+    document.querySelectorAll('#skillsKbParsedTasks .kb-task-chk').forEach(cb => { cb.checked = false; const id = cb.getAttribute('data-kbid'); if (id && skillsKbState.selected) skillsKbState.selected.delete(id); });
+  };
+  const selectAllBtn = document.getElementById('skillsKbSelectAllBtn');
+  if (selectAllBtn) selectAllBtn.onclick = () => {
+    // выбрать только видимые (отфильтрованные) — они сейчас отрисованы в DOM
+    document.querySelectorAll('#skillsKbParsedTasks .kb-task-chk').forEach(cb => { cb.checked = true; const id = cb.getAttribute('data-kbid'); if (id) { if (!skillsKbState.selected) skillsKbState.selected = new Set(); skillsKbState.selected.add(id); } });
+  };
+  await parseAndRender();
+}
+
+const skillsKbState = { tasks: [], selected: new Set() };
+
+function addSelectedSkillsKbTasks() {
+  const targetSelect = document.getElementById('skillsKbTargetSkillSelect');
+  const autoBind = document.getElementById('skillsKbAutoBind');
+  const targetSkillId = targetSelect?.value;
+  if (!autoBind?.checked && !targetSkillId) { alert('Выберите навык для привязки'); return; }
+  if (!appState.developmentPlan) appState.developmentPlan = {};
+  const ids = Array.from(skillsKbState.selected || []);
+  const ensurePlan = (skillId, nameHint) => {
+    if (!skillId) return null;
+    if (!appState.developmentPlan[skillId]) {
+      const s = findSkillById(skillId) || { id: skillId, name: nameHint || getPlanSkillName(skillId) };
+      appState.developmentPlan[skillId] = { name: s.name || skillId, currentLevel: 0, targetLevel: 1, activities: [], totalDuration: 2 };
+    }
+    return appState.developmentPlan[skillId];
+  };
+
+  ids.forEach((id, idx) => {
+    const t = Array.from(document.querySelectorAll('#skillsKbParsedTasks .kb-task-chk'))
+      .map(cb => ({ id: cb.getAttribute('data-kbid'), idx: parseInt(cb.closest('.kb-task')?.getAttribute('data-idx')) }))
+      .find(x => x.id === id);
+    const taskData = (typeof t?.idx === 'number') ? skillsKbState.tasks[t.idx] : null;
+    if (!taskData) return;
+    // resolve skill binding
+    let bindSkillId = targetSkillId;
+    if (autoBind?.checked && taskData.skillName) {
+      const raw = String(taskData.skillName || '');
+      const primaryName = raw.split(',')[0].trim();
+      if (primaryName) {
+        const found = findSkillByName(primaryName);
+        if (found) bindSkillId = found.id;
+      }
+    }
+    const plan = ensurePlan(bindSkillId, taskData.skillName);
+    if (!plan) return;
+    plan.activities.push({
+      id: `${bindSkillId}_${Date.now()}_${idx}`,
+      name: taskData.title,
+      level: Math.max(1, plan.currentLevel + 1),
+      duration: Number.isFinite(taskData.durationWeeks) && taskData.durationWeeks > 0 ? taskData.durationWeeks : 2,
+      status: 'planned',
+      completed: false,
+      comment: '',
+      description: taskData.description || '',
+      expectedResult: taskData.criteria || '',
+      relatedSkills: [],
+      skillWeights: undefined
+    });
+    plan.totalDuration = plan.activities.reduce((s, a) => s + (a.duration || 0), 0);
+  });
+  saveToLocalStorage();
+  // остаёмся на вкладке, обновим счётчики и план
+  updateSelectedCounter();
+  renderPlan();
+  // перейти к Плану
+  showSection('planSection');
+}
+
+function addSelectedKbTasks() {
+  const modal = document.getElementById('kbPickerModal');
+  if (!modal) return;
+  const targetSelect = document.getElementById('kbTargetSkillSelect');
+  const targetSkillId = targetSelect?.value;
+  if (!targetSkillId) { alert('Выберите навык для привязки'); return; }
+  if (!appState.developmentPlan) appState.developmentPlan = {};
+  if (!appState.developmentPlan[targetSkillId]) {
+    const s = findSkillById(targetSkillId) || { id: targetSkillId, name: getPlanSkillName(targetSkillId) };
+    appState.developmentPlan[targetSkillId] = { name: s.name || targetSkillId, currentLevel: 0, targetLevel: 1, activities: [], totalDuration: 2 };
+  }
+  const plan = appState.developmentPlan[targetSkillId];
+  const checks = modal.querySelectorAll('.kb-task-chk');
+  const selectedIdxs = Array.from(checks).filter(cb => cb.checked).map(cb => parseInt(cb.getAttribute('data-idx')));
+  selectedIdxs.forEach(i => {
+    const t = modalKbState.tasks[i];
+    if (!t) return;
+    plan.activities.push({
+      id: `${targetSkillId}_${Date.now()}_${i}`,
+      name: t.title,
+      level: Math.max(1, plan.currentLevel + 1),
+      duration: Number.isFinite(t.durationWeeks) && t.durationWeeks > 0 ? t.durationWeeks : 2,
+      status: 'planned',
+      completed: false,
+      comment: '',
+      description: t.description || '',
+      expectedResult: t.criteria || '',
+      relatedSkills: [],
+      skillWeights: undefined
+    });
+  });
+  plan.totalDuration = plan.activities.reduce((s, a) => s + (a.duration || 0), 0);
+  saveToLocalStorage();
+  renderPlan();
+  toggleKbPicker(false);
 }
 
 // Состояние приложения
@@ -391,9 +930,15 @@ function setupEventListeners() {
   // Навыки
   const generatePlanBtn = document.getElementById('generatePlan');
   const generatePromptBtn = document.getElementById('generatePromptBtn');
+  const openKbPickerBtn = document.getElementById('openKbPickerBtn');
   const appendToPlanBtn = document.getElementById('appendToPlan');
   const bulkSelectBtn = document.getElementById('bulkSelectBtn');
   const deselectAllBtn = document.getElementById('deselectAllBtn');
+  const skillsTabManualBtn = document.getElementById('skillsTabManualBtn');
+  const skillsTabKBBtn = document.getElementById('skillsTabKBBtn');
+  const skillsTabManualPanel = document.getElementById('skillsTabManualPanel');
+  const skillsTabKBPanel = document.getElementById('skillsTabKBPanel');
+  const skillsHeaderTitle = document.getElementById('skillsHeaderTitle');
   if (generatePlanBtn) {
     generatePlanBtn.addEventListener('click', handleGeneratePlan);
   }
@@ -414,6 +959,27 @@ function setupEventListeners() {
   }
   if (generatePromptBtn) {
     generatePromptBtn.addEventListener('click', handleGeneratePrompt);
+  }
+  if (openKbPickerBtn) {
+    openKbPickerBtn.addEventListener('click', () => toggleKbPicker(true));
+  }
+  if (skillsTabManualBtn && skillsTabKBBtn && skillsTabManualPanel && skillsTabKBPanel) {
+    skillsTabManualBtn.addEventListener('click', async () => {
+      skillsTabManualBtn.classList.add('active');
+      skillsTabKBBtn.classList.remove('active');
+      skillsTabManualPanel.classList.add('active');
+      skillsTabKBPanel.classList.remove('active');
+      if (skillsHeaderTitle) skillsHeaderTitle.textContent = 'Выбери навыки для развития';
+      renderSkills();
+    });
+    skillsTabKBBtn.addEventListener('click', async () => {
+      skillsTabKBBtn.classList.add('active');
+      skillsTabManualBtn.classList.remove('active');
+      skillsTabKBPanel.classList.add('active');
+      skillsTabManualPanel.classList.remove('active');
+      if (skillsHeaderTitle) skillsHeaderTitle.textContent = 'Выбор задач из Базы знаний';
+      await renderSkillsKbPicker();
+    });
   }
   
   const backToSkillsBtn = document.getElementById('backToSkills');
@@ -738,6 +1304,16 @@ function setupEventListeners() {
   }
   const promptModal = document.getElementById('promptModal');
   const closePromptModalBtn = document.getElementById('closePromptModal');
+  const kbPickerModal = document.getElementById('kbPickerModal');
+  const closeKbPickerModal = document.getElementById('closeKbPickerModal');
+  const kbAddSelectedBtn = document.getElementById('kbAddSelectedBtn');
+  if (kbPickerModal && closeKbPickerModal && kbAddSelectedBtn) {
+    closeKbPickerModal.addEventListener('click', () => toggleKbPicker(false));
+    kbPickerModal.addEventListener('click', (e) => {
+      if (e.target && e.target.hasAttribute('data-close-modal')) toggleKbPicker(false);
+    });
+    kbAddSelectedBtn.addEventListener('click', addSelectedKbTasks);
+  }
   if (promptModal && closePromptModalBtn) {
     closePromptModalBtn.addEventListener('click', () => togglePromptModal(false));
     promptModal.addEventListener('click', (e) => {
@@ -1066,6 +1642,7 @@ function renderSkills() {
             <span class="form-label" style="margin:0;">Быстрый выбор:</span>
             <div class="preset-buttons">
               ${has1 ? `<button type="button" class="btn btn--outline btn--sm" onclick="applyLevelPreset('${skill.id}', 0, 1)">0→1</button>` : ''}
+              ${(has1 && has2) ? `<button type="button" class="btn btn--outline btn--sm" onclick="applyLevelPreset('${skill.id}', 1, 2)">1→2</button>` : ''}
               ${(has2 && has3) ? `<button type=\"button\" class=\"btn btn--outline btn--sm\" onclick=\"applyLevelPreset('${skill.id}', 2, 3)\">2→3</button>` : ''}
               ${(has3 && has4) ? `<button type=\"button\" class=\"btn btn--outline btn--sm\" onclick=\"applyLevelPreset('${skill.id}', 3, 4)\">3→4</button>` : ''}
             </div>
@@ -1132,22 +1709,25 @@ window.toggleSkillDetails = function(skillId) {
     const targetSelect = document.getElementById(`target-${skillId}`);
     
     if (currentSelect && targetSelect) {
-      const persist = () => {
+      const persist = (from) => {
         const cur = currentSelect.value ? parseInt(currentSelect.value) : 0;
         const tar = targetSelect.value ? parseInt(targetSelect.value) : 0;
         if (tar > cur) {
           appState.selectedSkills[skillId] = { current: cur, target: tar };
         } else {
-          delete appState.selectedSkills[skillId];
+          // Если выбран только текущий уровень — держим карточку раскрытой и ждём целевой
+          appState.selectedSkills[skillId] = { current: cur, target: 0 };
         }
         saveToLocalStorage();
         updateSkillDescription(skillId);
-          updateSelectedCounter();
-          // Перерисуем список, чтобы кнопка "Снять выбор" появилась/скрылась сразу
+        updateSelectedCounter();
+        // Не закрываем карточку на выборе current; обновлять список полностью не нужно
+        if (from === 'target') {
           renderSkills();
+        }
       };
-      currentSelect.addEventListener('change', persist);
-      targetSelect.addEventListener('change', persist);
+      currentSelect.addEventListener('change', () => persist('current'));
+      targetSelect.addEventListener('change', () => persist('target'));
       // Инициализация описания по сохранённым значениям
       const saved = appState.selectedSkills?.[skillId];
       if (saved) {
@@ -1267,6 +1847,23 @@ function findSkillByName(name) {
     }
   }
   return null;
+}
+
+function getMaxAvailableLevelForSkill(skill) {
+  if (!skill || !skill.levels || typeof skill.levels !== 'object') return 1;
+  let max = 0;
+  Object.entries(skill.levels).forEach(([lvlStr, data]) => {
+    const lvl = parseInt(lvlStr);
+    if (!Number.isFinite(lvl) || lvl <= 0) return;
+    const hasContent = !!(data && (
+      (typeof data.description === 'string' && data.description.trim().length > 0) ||
+      (Array.isArray(data.activities) && data.activities.length > 0)
+    ));
+    if (hasContent) {
+      if (lvl > max) max = lvl;
+    }
+  });
+  return Math.max(1, max || 1);
 }
 
 function ensureSkillInPlanAndProgress(skillId, name) {
@@ -1507,8 +2104,25 @@ async function quickLoadByIdFromHeader() {
     if (!(json.ok && Array.isArray(json.data))) { if (status) status.textContent = 'Ошибка ответа'; return; }
     const row = json.data.find(x => String(x.id) === String(id));
     if (!row || !row.payload) { if (status) status.textContent = 'Запись не найдена'; return; }
-    appState = row.payload; saveToLocalStorage();
-    renderSkills(); renderPlan(); renderProgress();
+    appState = row.payload || {};
+    // Normalize UI title/id for headers and panels
+    appState.ui = appState.ui || {};
+    if (row.payload?.title && !appState.ui.cloudPlanTitle) appState.ui.cloudPlanTitle = row.payload.title;
+    appState.ui.cloudRecordId = id;
+    saveToLocalStorage();
+    // Re-render all major sections and sync form fields/headers
+    renderSkills();
+    renderPlan();
+    renderProgress();
+    // Populate profile form fields
+    try { populateProfileFormFromState(); } catch (_) {}
+    // Update inline cloud title/id
+    try {
+      const inlineTitle = document.getElementById('inlineCloudPlanTitleInput');
+      if (inlineTitle) inlineTitle.value = appState.ui?.cloudPlanTitle || '';
+      const inlineIdEl = document.getElementById('inlineCloudCurrentRecord');
+      if (inlineIdEl) inlineIdEl.textContent = appState.ui?.cloudRecordId ? `id = ${appState.ui.cloudRecordId}` : '';
+    } catch (_) {}
     showSection('progressSection');
     appState.ui = appState.ui || {}; appState.ui.cloudRecordId = id; saveToLocalStorage();
     if (status) status.textContent = 'Загружено';
@@ -1553,7 +2167,7 @@ function importFromJson() {
       id: `${id}_ext_${i}`,
       name: t.title || t.name || 'Задача',
       level: Math.min(plan.targetLevel, Math.max(plan.currentLevel + 1, plan.currentLevel + 1)),
-      duration: Number.isFinite(t.duration) ? Math.max(1, Math.round(t.duration)) : 1,
+    duration: Number.isFinite(t.duration) ? Math.max(1, Math.round(t.duration)) : 2,
         status: 'planned',
       completed: false,
       comment: '',
@@ -1623,7 +2237,7 @@ function generateDevelopmentPlan() {
           id: `${skillId}_${level}_${index}`,
           name: activity,
           level: level,
-          duration: getDurationForLevel(level - 1, level),
+          duration: 2,
           status: 'planned',
           completed: false,
           comment: '',
@@ -1640,7 +2254,7 @@ function generateDevelopmentPlan() {
       currentLevel: levels.current,
       targetLevel: levels.target,
       activities: activities,
-      totalDuration: getDurationForLevel(levels.current, levels.target)
+      totalDuration: activities.reduce((s, a) => s + (a.duration || 0), 0)
     };
   });
 }
@@ -1660,7 +2274,7 @@ function appendSelectedSkillsToPlan() {
           id: `${skillId}_${level}_${index}`,
           name: activity,
           level: level,
-          duration: getDurationForLevel(level - 1, level),
+          duration: 2,
           status: 'planned',
           completed: false,
           comment: '',
@@ -1676,7 +2290,7 @@ function appendSelectedSkillsToPlan() {
       currentLevel: levels.current,
       targetLevel: levels.target,
       activities,
-      totalDuration: getDurationForLevel(levels.current, levels.target)
+      totalDuration: activities.reduce((s, a) => s + (a.duration || 0), 0)
     };
   });
   appState.developmentPlan = existing;
@@ -1746,19 +2360,38 @@ function renderPlan() {
 
   const addSkillPanel = `
     <div class="card" style="margin-bottom:12px;">
-      <div class="card__body">
+      <div class="card__body" style="display:flex; flex-direction:column; gap:12px;">
         <div class="form-group" style="display:flex; gap:8px; align-items:flex-end; margin:0;">
           <div style="flex:1; min-width:260px;">
             <label class="form-label">Добавить навык в план</label>
             <select id="planAddSkillSelect" class="form-control">
-              <option value="">Выберите навык из каталога</option>
+              <option value="">Выберите навык</option>
               ${catalog
                 .filter(s => !allSkillIds.includes(s.id))
-                .map(s => `<option value="${s.id}">${s.name}</option>`)
+                .map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`)
                 .join('')}
             </select>
           </div>
-          <button class="btn btn--secondary btn--sm" id="planAddSkillBtn">Добавить</button>
+          <div style="display:flex; gap:8px;">
+            <div>
+              <label class="form-label">Целевой уровень</label>
+              <select id="planAddSkillTarget" class="form-control" style="width:120px;">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+            <button class="btn btn--outline" id="planAddSkillBtn">Добавить</button>
+          </div>
+        </div>
+        <div class="form-group" style="display:flex; gap:8px; align-items:flex-end; margin:0;">
+          <div style="flex:1; min-width:260px;">
+            <label class="form-label">Выберите задачу из каталога</label>
+            <select id="planAddTaskCatalogSelect" class="form-control">
+              <option value="">Загрузка каталога задач...</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>`;
@@ -1807,7 +2440,7 @@ function renderPlan() {
               </div>
               <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
                 <select class="form-control" id="relatedAdd-${skillId}-${idx}">
-                  <option value="">Выберите навык из каталога</option>
+                  <option value="">Выберите навык</option>
                   ${catalog
                     .filter(s => s.id !== skillId && !(activity.relatedSkills||[]).includes(s.id))
                     .map(s => `<option value="${s.id}">${s.name}</option>`)
@@ -1839,10 +2472,45 @@ function renderPlan() {
   if (planAddSkillBtn) {
     planAddSkillBtn.onclick = () => {
       const sel = document.getElementById('planAddSkillSelect');
+      const tgtEl = document.getElementById('planAddSkillTarget');
       const id = sel && sel.value;
       if (!id) return;
-      addSkillToPlan(id);
+      let tgt = Math.max(1, parseInt(tgtEl?.value || '1') || 1);
+      // max уровни навыка (по содержимому уровней)
+      const skill = findSkillById(id);
+      let maxLevel = getMaxAvailableLevelForSkill(skill);
+      tgt = Math.min(tgt, maxLevel);
+      const cur = Math.max(0, tgt - 1);
+      addSkillToPlan(id, { currentLevel: cur, targetLevel: tgt });
     };
+  }
+  // Populate tasks catalog select async
+  populatePlanTaskCatalogSelect();
+  const planTaskCatalogSelect = document.getElementById('planAddTaskCatalogSelect');
+  if (planTaskCatalogSelect) {
+    const openKb = (e) => { e.preventDefault(); e.stopPropagation(); openSkillsKbSelectionFromPlan(); };
+    planTaskCatalogSelect.addEventListener('mousedown', openKb);
+    planTaskCatalogSelect.addEventListener('focus', openKb, { once: true });
+  }
+  // Динамически перестраивать уровни при смене навыка и корректировать target при смене current
+  const planAddSkillSelectEl = document.getElementById('planAddSkillSelect');
+  const planAddSkillTargetEl = document.getElementById('planAddSkillTarget');
+  const rebuildPlanAddLevels = () => {
+    if (!planAddSkillSelectEl || !planAddSkillTargetEl) return;
+    const id = planAddSkillSelectEl.value;
+    const skill = id ? findSkillById(id) : null;
+    const maxLevel = getMaxAvailableLevelForSkill(skill);
+    // rebuild target options
+    planAddSkillTargetEl.innerHTML = Array.from({ length: maxLevel }, (_, i) => i + 1)
+      .map(n => `<option value="${n}">${n}</option>`)
+      .join('');
+    const prevTgt = Math.max(1, parseInt(planAddSkillTargetEl.value || '1') || 1);
+    planAddSkillTargetEl.value = String(Math.min(prevTgt, maxLevel));
+  };
+  if (planAddSkillSelectEl && planAddSkillTargetEl) {
+    planAddSkillSelectEl.addEventListener('change', rebuildPlanAddLevels);
+    // initial align
+    rebuildPlanAddLevels();
   }
   const startProgressBtn = document.getElementById('startProgress');
   if (startProgressBtn) {
@@ -1855,6 +2523,24 @@ function renderPlan() {
       showSection('progressSection');
       renderProgress();
     };
+  }
+}
+
+// Открыть вкладку Выбор навыков/Задачи из Базы знаний из панели Плана
+function openSkillsKbSelectionFromPlan() {
+  const skillsTabManualBtn = document.getElementById('skillsTabManualBtn');
+  const skillsTabKBBtn = document.getElementById('skillsTabKBBtn');
+  const skillsTabManualPanel = document.getElementById('skillsTabManualPanel');
+  const skillsTabKBPanel = document.getElementById('skillsTabKBPanel');
+  const skillsHeaderTitle = document.getElementById('skillsHeaderTitle');
+  showSection('skillsSection');
+  if (skillsTabManualBtn && skillsTabKBBtn && skillsTabManualPanel && skillsTabKBPanel) {
+    skillsTabManualBtn.classList.remove('active');
+    skillsTabKBBtn.classList.add('active');
+    skillsTabManualPanel.classList.remove('active');
+    skillsTabKBPanel.classList.add('active');
+    if (skillsHeaderTitle) skillsHeaderTitle.textContent = 'Выбор задач из Базы знаний';
+    try { renderSkillsKbPicker(); } catch (_) {}
   }
 }
 
@@ -2587,7 +3273,7 @@ function openKanbanTaskModal(skillId, index) {
     // селект каталога всех навыков из CSV
     const catalog = [];
     Object.values(skillsData.skills || {}).forEach(arr => (arr || []).forEach(s => catalog.push({ id: s.id, name: s.name })));
-    addSelect.innerHTML = '<option value="">Выберите навык из каталога</option>' + catalog
+    addSelect.innerHTML = '<option value="">Выберите навык</option>' + catalog
       .filter(s => s.id !== skillId && !relSet.has(s.id))
       .map(s => `<option value="${s.id}">${s.name}</option>`)
       .join('');
@@ -2700,14 +3386,15 @@ window.addPlanActivity = function(skillId) {
       id: `${skillId}_${Date.now()}`,
     name: 'Новая задача',
     level: plan.currentLevel + 1,
-    duration: 1,
+    duration: 2,
       status: 'planned',
     completed: false,
     comment: '',
     relatedSkills: [],
     skillWeights: undefined
   });
-  plan.totalDuration = getDurationForLevel(plan.currentLevel, plan.targetLevel);
+  // Пересчитываем суммарную длительность как сумму длительностей задач
+  plan.totalDuration = plan.activities.reduce((sum, a) => sum + (a.duration || 0), 0);
   saveToLocalStorage();
   renderPlan();
 };
@@ -2754,7 +3441,7 @@ window.removePlanSkill = function(skillId) {
 };
 
 // Добавить навык по id из каталога CSV в план, подготовить к добавлению задач
-window.addSkillToPlan = function(skillId) {
+window.addSkillToPlan = function(skillId, opts) {
   if (!skillId) return;
   // Найти навык в каталоге
   const skill = findSkillById(skillId);
@@ -2763,20 +3450,150 @@ window.addSkillToPlan = function(skillId) {
   if (appState.developmentPlan && appState.developmentPlan[skillId]) return;
   if (!appState.developmentPlan) appState.developmentPlan = {};
   // Проставим дефолтные уровни 0→1 и пустые задачи
+  let tgt = Math.max(1, parseInt(opts?.targetLevel ?? 1) || 1);
+  let cur = Math.max(0, parseInt(opts?.currentLevel ?? (tgt - 1)) || (tgt - 1));
+  // Ограничим по фактическому числу уровней навыка
+  const maxLevel = getMaxAvailableLevelForSkill(skill);
+  cur = Math.min(cur, maxLevel);
+  tgt = Math.min(tgt, maxLevel);
+  if (tgt <= cur) tgt = Math.min(cur + 1, maxLevel);
   appState.developmentPlan[skillId] = {
     name: skill.name,
-    currentLevel: 0,
-    targetLevel: 1,
+    currentLevel: cur,
+    targetLevel: tgt,
     activities: [],
-    totalDuration: 0
+    totalDuration: 2
   };
   // Отметим в selectedSkills, чтобы синхронизировалось и в UI навыков
   if (!appState.selectedSkills) appState.selectedSkills = {};
-  appState.selectedSkills[skillId] = { current: 0, target: 1 };
+  appState.selectedSkills[skillId] = { current: cur, target: tgt };
   // Обновим прогресс/план (прогресс не трогаем до старта или merge)
   saveToLocalStorage();
   renderPlan();
 };
+
+// Добавить задачу по её названию. Источник описания/критериев — kb_tasks.json (если доступен)
+window.addTaskToPlanByTitle = async function() {
+  const titleInput = document.getElementById('planAddTaskTitle');
+  const skillSelect = document.getElementById('planAddTaskSkillSelect');
+  const rawTitle = (titleInput?.value || '').trim();
+  const skillId = skillSelect?.value || '';
+  if (!rawTitle) { alert('Введите название задачи'); return; }
+  if (!skillId) { alert('Выберите навык для привязки'); return; }
+
+  // Ensure skill exists in plan
+  if (!appState.developmentPlan) appState.developmentPlan = {};
+  if (!appState.developmentPlan[skillId]) {
+    const s = findSkillById(skillId) || { id: skillId, name: getPlanSkillName(skillId) };
+    appState.developmentPlan[skillId] = { name: s.name || skillId, currentLevel: 0, targetLevel: 1, activities: [], totalDuration: 2 };
+  }
+  const plan = appState.developmentPlan[skillId];
+
+  // Try to enrich from kb_tasks.json
+  let desc = '';
+  let criteria = '';
+  try {
+    let resp = await fetch('kb_tasks.json', { cache: 'no-store' });
+    if (!resp.ok) {
+      resp = await fetch('База_знаний_ИПР/kb_tasks.json', { cache: 'no-store' });
+    }
+    if (resp.ok) {
+      const arr = await resp.json();
+      if (Array.isArray(arr)) {
+        const found = arr.find(t => String(t.goal || t.title || '').trim().toLowerCase() === rawTitle.toLowerCase());
+        if (found) {
+          desc = found.description || '';
+          criteria = found.criteria || '';
+        }
+      }
+    }
+  } catch (_) {}
+
+  plan.activities.push({
+    id: `${skillId}_${Date.now()}`,
+    name: rawTitle,
+    level: Math.min(Math.max(1, (plan.currentLevel || 0) + 1), Math.max(plan.currentLevel || 0, plan.targetLevel || 1)),
+    duration: 2,
+    status: 'planned',
+    completed: false,
+    comment: '',
+    description: desc,
+    expectedResult: criteria,
+    relatedSkills: [],
+    skillWeights: undefined
+  });
+  plan.totalDuration = plan.activities.reduce((s, a) => s + (a.duration || 0), 0);
+  saveToLocalStorage();
+  renderPlan();
+  if (titleInput) titleInput.value = '';
+};
+
+// Заполнить селект задач из kb_tasks.json
+async function populatePlanTaskCatalogSelect() {
+  const select = document.getElementById('planAddTaskCatalogSelect');
+  if (!select) return;
+  select.innerHTML = '<option value="">Загрузка...</option>';
+  let items = [];
+  try {
+    let resp = await fetch('kb_tasks.json', { cache: 'no-store' });
+    if (!resp.ok) resp = await fetch('База_знаний_ИПР/kb_tasks.json', { cache: 'no-store' });
+    if (resp.ok) items = await resp.json();
+  } catch (_) {}
+  if (!Array.isArray(items)) items = [];
+  // value: JSON-stringified minimal payload to avoid later lookup, keep size reasonable
+  const options = ['<option value="">Выберите задачу</option>']
+    .concat(items.map((t, idx) => {
+      const payload = {
+        title: t.goal || t.title || '(без названия)',
+        description: t.description || '',
+        criteria: t.criteria || '',
+        skillName: t.skillName || ''
+      };
+      const label = `${payload.title} ${t.skillName ? '— ' + t.skillName : ''}`;
+      return `<option value='${JSON.stringify(payload).replace(/'/g, '&#39;')}'>${escapeHtml(label)}</option>`;
+    }));
+  select.innerHTML = options.join('');
+}
+
+// Добавить выбранную из каталога задачу
+window.addTaskFromCatalogToPlan = function() {
+  const select = document.getElementById('planAddTaskCatalogSelect');
+  const raw = select?.value || '';
+  if (!raw) { alert('Выберите задачу из каталога'); return; }
+  let data = null;
+  try { data = JSON.parse(raw); } catch (_) {}
+  if (!data) { alert('Некорректные данные задачи'); return; }
+  let skillId = '';
+  // Автопривязка по skillName
+  if (data.skillName) {
+    const found = findSkillByName(String(data.skillName).split(',')[0].trim());
+    if (found) skillId = found.id;
+  }
+  if (!skillId) { alert('Выберите навык для привязки'); return; }
+
+  if (!appState.developmentPlan) appState.developmentPlan = {};
+  if (!appState.developmentPlan[skillId]) {
+    const s = findSkillById(skillId) || { id: skillId, name: getPlanSkillName(skillId) };
+    appState.developmentPlan[skillId] = { name: s.name || skillId, currentLevel: 0, targetLevel: 1, activities: [], totalDuration: 0 };
+  }
+  const plan = appState.developmentPlan[skillId];
+  plan.activities.push({
+    id: `${skillId}_${Date.now()}`,
+    name: data.title,
+    level: Math.min(Math.max(1, (plan.currentLevel || 0) + 1), Math.max(plan.currentLevel || 0, plan.targetLevel || 1)),
+    duration: 2,
+    status: 'planned',
+    completed: false,
+    comment: '',
+    description: data.description || '',
+    expectedResult: data.criteria || '',
+    relatedSkills: [],
+    skillWeights: undefined
+  });
+  plan.totalDuration = plan.activities.reduce((s, a) => s + (a.duration || 0), 0);
+  saveToLocalStorage();
+  renderPlan();
+}
 
 function toggleTheme() {
   console.log('Переключение темы...');

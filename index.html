@@ -37,8 +37,8 @@
                     <div class="welcome-container">
                         <div class="welcome-card card">
                             <div class="card__body">
-                                <h2>Добро пожаловать в генератор ИПР</h2>
-                                <p>Создайте индивидуальный план развития для достижения ваших профессиональных целей</p>
+                                <h2>Добро пожаловать</h2>
+                                <p>Создай индивидуальный план развития для достижения профессиональных целей</p>
                                 <img src="Sora One More Task Logo.png" alt="One More Task" class="welcome-logo" />
                                 <div class="action-buttons">
                                     <button class="btn btn--primary btn--lg" id="createNewPlan">Создать новый ИПР</button>
@@ -106,13 +106,20 @@
                         <div class="progress-step">Анализ развития</div>
                     </div>
                     
+                    <div class="flow-tabs-bar">
+                      <div class="tabs flow-tabs">
+                        <button class="tab active" id="skillsTabManualBtn">Навыки вручную</button>
+                        <button class="tab" id="skillsTabKBBtn">Задачи из Базы знаний</button>
+                      </div>
+                    </div>
                     <div class="card">
                         <div class="card__header">
-                            <h2>Выбери навыки для развития</h2>
+                          <h2 id="skillsHeaderTitle">Выбери навыки для развития</h2>
                         </div>
                         <div class="card__body">
+
+                          <div id="skillsTabManualPanel" class="tab-panel active">
                             <div class="status status--info" style="margin-bottom:12px;">Выбери те навыки, которые бы хотелось развивать и переходи к Созданию ИПР. Укажите текущий и желаемый уровни для каждого навыка</div>
-                            
                             <div class="skills-topbar" style="display:flex; justify-content:space-between; gap:12px; align-items:flex-end; margin-bottom:8px;">
                                 <div style="display:flex; gap:12px; align-items:flex-end;">
                                     <div id="skillsCsvHelper" class="form-group" style="display:none; margin: 0;">
@@ -139,8 +146,59 @@
                                     <button class="btn btn--outline" id="deselectAllBtn">Развыбрать все</button>
                                 </div>
                             </div>
-
                             <div class="skills-categories"></div>
+                          </div>
+
+                          <div id="skillsTabKBPanel" class="tab-panel">
+                            <div class="status status--info" style="margin-bottom:12px;">Выберите задачи из Базы знаний и добавьте их к навыку плана</div>
+                            <div class="form-group" style="display:flex; gap:12px; align-items:stretch; flex-direction:column;">
+                              <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+                                <div style="flex:1; min-width:260px;">
+                                  <label class="form-label">Фильтр</label>
+                                  <input type="text" id="skillsKbSearchInput" class="form-control" placeholder="Поиск по категориям/задачам" />
+                                </div>
+                                <div style="display:flex; gap:8px; align-items:flex-end;">
+                                  <button class="btn btn--outline" id="skillsKbSelectAllBtn" type="button">Выбрать все</button>
+                                  <button class="btn btn--outline" id="skillsKbDeselectAllBtn" type="button">Снять все</button>
+                                </div>
+                                <div style="width: 320px; min-width: 260px;">
+                                  <label class="form-label">Навык</label>
+                                  <select id="skillsKbFilterSkillSelect" class="form-control">
+                                    <option value="">Все навыки</option>
+                                  </select>
+                                </div>
+                                <div style="width: 200px; min-width: 160px;">
+                                  <label class="form-label">Уровень</label>
+                                  <select id="skillsKbFilterLevelSelect" class="form-control">
+                                    <option value="">Все уровни</option>
+                                    <option value="1">Базовые знания</option>
+                                    <option value="2">Уверенные значения</option>
+                                    <option value="3">Глубокие знания</option>
+                                    <option value="4">Любая сложность</option>
+                                  </select>
+                                </div>
+                                
+                              </div>
+                              <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+                                <div style="width: 320px; min-width: 260px;">
+                                  <label class="form-label">Привязать к навыку</label>
+                                  <select id="skillsKbTargetSkillSelect" class="form-control"></select>
+                                </div>
+                                <label class="form-label" style="margin:0; display:flex; align-items:center; gap:8px;">
+                                  <input type="checkbox" id="skillsKbAutoBind" checked>
+                                  Автопривязка навыка
+                                </label>
+                                
+                                <div style="flex:1; display:flex; justify-content:flex-end;">
+                                  <button class="btn btn--primary" id="skillsKbAddSelectedBtn">Добавить выбранные задачи</button>
+                                </div>
+                              </div>
+                            </div>
+                            <div id="skillsKbFilesWrap" style="display:none; margin-top:12px;">
+                              <div id="skillsKbFilesList" style="margin-top:8px; display:grid; gap:8px;"></div>
+                            </div>
+                            <div id="skillsKbParsedTasks" style="margin-top:12px;"></div>
+                          </div>
                         </div>
                     </div>
                 </section>
@@ -169,7 +227,7 @@
                         </div>
                         <div class="card__body">
                                 <div class="status status--info" style="margin-bottom:12px;">
-                                  <div>Сгенерируй промт для ИПР по кнопке. Получи результат промта в виде JSON с помощью любого ИИ. Импортни JSON по кнопке. Самостоятельно или с помощью Ментора скорректируй описание задач и время их выполнения. И переходи к выполнению ИПР</div>
+                                  <div>Скорректируй задачи, выбранные ранее. Или сгенерируй промт для ИПР по кнопке. Получи результат промта в виде JSON с помощью любого ИИ. Импортни JSON по кнопке. Самостоятельно или с помощью Ментора скорректируй описание задач и время их выполнения. И переходи к выполнению ИПР</div>
                                 </div>
                             <div id="planContent" class="plan-content"></div>
                         </div>
@@ -344,6 +402,34 @@
         </main>
     </div>
 
+    <!-- Knowledge Base Picker Modal -->
+    <div id="kbPickerModal" class="modal" aria-hidden="true" style="display:none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="kbPickerModalTitle">
+        <div class="modal__header">
+          <h3 id="kbPickerModalTitle">Выбор задач из Базы знаний</h3>
+          <button class="btn btn--outline btn--sm" id="closeKbPickerModal">Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <div class="form-group" style="display:flex; gap:8px; align-items:flex-end;">
+            <div style="flex:1;">
+              <label class="form-label">Фильтр</label>
+              <input type="text" id="kbSearchInput" class="form-control" placeholder="Поиск по категориям/задачам" />
+            </div>
+            <div style="width: 280px;">
+              <label class="form-label">Привязать к навыку</label>
+              <select id="kbTargetSkillSelect" class="form-control"></select>
+            </div>
+          </div>
+          <div id="kbFilesList" style="margin-top:12px; display:grid; gap:12px;"></div>
+          <div id="kbParsedTasks" style="margin-top:12px;"></div>
+        </div>
+        <div class="modal__footer">
+          <button class="btn btn--primary" id="kbAddSelectedBtn">Добавить выбранные задачи</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Bulk Select Skills Modal -->
     <div id="bulkSelectModal" class="modal" aria-hidden="true" style="display:none;">
       <div class="modal__overlay" data-close-modal></div>
@@ -396,7 +482,7 @@ Firebase	2"></textarea>
                       <div id="kanbanTaskRelatedCheckboxes" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:6px;"></div>
                       <div style="display:flex; gap:8px; align-items:center;">
                         <select id="kanbanTaskRelatedAddSelect" class="form-control" style="max-width:360px;"></select>
-                        <button type="button" class="btn btn--outline btn--sm" id="kanbanTaskRelatedAddBtn">Добавить</button>
+                         <button type="button" class="btn btn--outline btn--xs" id="kanbanTaskRelatedAddBtn">Добавить</button>
                       </div>
                     </div>
                 </div>

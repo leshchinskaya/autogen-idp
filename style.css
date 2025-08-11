@@ -455,6 +455,13 @@ pre code {
   border-radius: var(--radius-sm);
 }
 
+/* Extra small button size */
+.btn--xs {
+  padding: var(--space-2) var(--space-8);
+  font-size: var(--font-size-xs);
+  border-radius: var(--radius-sm);
+}
+
 .btn--lg {
   padding: var(--space-10) var(--space-20);
   font-size: var(--font-size-lg);
@@ -1177,6 +1184,34 @@ select.form-control {
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
+/* Larger tabs for flow selection */
+.flow-tabs { gap: var(--space-16); justify-content: center; }
+.flow-tabs .tab {
+  padding: var(--space-8) var(--space-16);
+  font-size: var(--font-size-lg);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-8);
+  border-color: rgba(var(--color-success-rgb), 0.25);
+  color: var(--color-primary);
+}
+.flow-tabs .tab:hover { background: rgba(8, 145, 178, 0.2); }
+.flow-tabs .tab.active {
+  background: var(--color-primary);
+  color: var(--color-btn-primary-text);
+}
+
+/* Flow tabs bar as separate block */
+.flow-tabs-bar {
+  background: var(--color-surface);
+  border: 1px solid var(--color-card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-12);
+  margin-bottom: var(--space-16);
+  display: flex;
+  justify-content: center;
+}
+
 .analysis-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1606,3 +1641,30 @@ html {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Small helpers for KB modal */
+.checkbox { display: inline-flex; align-items: center; gap: 8px; }
+.checkbox input[type="checkbox"] { margin: 0; }
+
+/* KB task cards style to mirror Progress/List aesthetics */
+.kb-task { background: var(--color-surface); }
+.kb-task-header { }
+.kb-task-body { }
+.kb-task .tag { font-size: var(--font-size-xs); }
+.kb-task .tag.tag--skill {
+  background-color: #DCFCE7; /* green-100 */
+  border: 1px solid #22C55E; /* green-500 */
+  color: #166534; /* green-700 */
+}
+.kb-task .tag.tag--level { 
+  background-color: #DBEAFE; /* blue-100 */
+  border: 1px solid #3B82F6; /* blue-500 */
+  color: #1D4ED8; /* blue-700 */
+}
+.kb-task .tag.tag--duration {
+  background-color: #E0F2FE; /* sky-100 */
+  border: 1px solid #0EA5E9; /* sky-500 */
+  color: #0369A1; /* sky-700 */
+}
+.kb-task .activity-name { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--color-text); }
+.kb-task .activity-desc, .kb-task .activity-expected { font-size: var(--font-size-md); line-height: 1.6; color: var(--color-text); white-space: pre-wrap; overflow-wrap: anywhere; }
