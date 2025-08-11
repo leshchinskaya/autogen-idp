@@ -3226,7 +3226,12 @@ function openKanbanTaskModal(skillId, index) {
           ${activity.expectedResult ? `<div class="activity-expected"><strong>Ожидаемый результат:</strong> ${linkify(activity.expectedResult)}</div>` : ''}
           ${(activity.relatedSkills && activity.relatedSkills.length) ? `<div class=\"activity-related\">Связанные навыки: ${activity.relatedSkills.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ')}</div>` : ''}
           <div class="activity-meta"><span>Уровень ${activity.level}</span><span>~${activity.duration} нед.</span></div>
-          ${activity.comment ? `<div class="activity-desc">${linkify(activity.comment)}</div>` : ''}
+          <div style="margin-top:8px; display:flex; gap:6px; align-items:flex-start;">
+            <input id="kanbanQuickComment" class="form-control" placeholder="Быстрый комментарий" style="flex:1;" />
+            <button class="btn btn--primary" id="kanbanQuickCommentBtn">Добавить</button>
+          </div>
+          <div id="kanbanQuickCommentStatus" class="status status--success" style="display:none; margin-top:6px;">Комментарий сохранён</div>
+          <div id="kanbanTaskCommentsList" style="margin-top:6px; display:grid; gap:6px;"></div>
         </div>
       </div>`;
     // default to view
@@ -3234,6 +3239,83 @@ function openKanbanTaskModal(skillId, index) {
     editWrap.style.display = 'none';
     saveBtn.style.display = 'none';
     editBtn.style.display = 'inline-flex';
+    // Render existing comments history
+    const listEl = document.getElementById('kanbanTaskCommentsList');
+    const ensureCommentsArray = () => {
+      if (!Array.isArray(activity.comments)) {
+        activity.comments = [];
+        if (activity.comment && String(activity.comment).trim().length > 0) {
+          activity.comments.push({ text: activity.comment, at: activity.commentAt || Date.now() });
+        }
+      }
+    };
+    const renderComments = () => {
+      if (!listEl) return;
+      ensureCommentsArray();
+      const comments = activity.comments.slice().sort((a,b) => (b.at||0) - (a.at||0));
+      listEl.innerHTML = comments.map(c => {
+        const dt = new Date(c.at || Date.now()).toLocaleString();
+        return `<div class="card" style="padding:8px; display:flex; gap:8px; justify-content:space-between; align-items:flex-start;">
+                  <div style="min-width:0;">
+                    <div style="font-size:12px; color:var(--color-text-secondary); margin-bottom:4px;">${dt}</div>
+                    <div class="activity-desc">${linkify(c.text || '')}</div>
+                  </div>
+                  <button class="btn btn--outline btn--xs" data-del-comment-at="${c.at}">Удалить</button>
+                </div>`;
+      }).join('');
+      // bind deletes
+      listEl.querySelectorAll('[data-del-comment-at]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const at = parseInt(btn.getAttribute('data-del-comment-at'));
+          ensureCommentsArray();
+          activity.comments = (activity.comments || []).filter(c => c.at !== at);
+          // если удалили «актуальный» одиночный комментарий — обновим legacy поля
+          if (activity.commentAt === at) {
+            const latest = activity.comments.slice().sort((a,b) => (b.at||0)-(a.at||0))[0];
+            activity.comment = latest ? latest.text : '';
+            activity.commentAt = latest ? latest.at : undefined;
+          }
+          saveToLocalStorage();
+          try { syncProgressTaskToPlan(skillId, index); } catch(_) {}
+          renderComments();
+        });
+      });
+    };
+    if (listEl) renderComments();
+
+    // Bind quick comment
+    const quickBtn = document.getElementById('kanbanQuickCommentBtn');
+    const quickInp = document.getElementById('kanbanQuickComment');
+    if (quickBtn && quickInp) {
+      const commit = () => {
+        const val = (quickInp.value || '').trim();
+        if (!val) return;
+        // Append to history, keep legacy field for compatibility
+        const act = appState.progress[skillId].activities[index];
+        if (!Array.isArray(act.comments)) act.comments = [];
+        const entry = { text: val, at: Date.now() };
+        // newest first
+        act.comments.unshift(entry);
+        act.comment = val;
+        act.commentAt = entry.at;
+        saveToLocalStorage();
+        // Обновим список комментариев (новые сверху) и статус
+        try {
+          renderComments();
+          const status = document.getElementById('kanbanQuickCommentStatus');
+          if (status) {
+            status.style.display = 'block';
+            setTimeout(() => { status.style.display = 'none'; }, 1200);
+          }
+          quickInp.value = '';
+          quickBtn.disabled = true;
+          setTimeout(() => { quickBtn.disabled = false; }, 400);
+        } catch(_) {}
+        try { syncProgressTaskToPlan(skillId, index); } catch(_) {}
+      };
+      quickBtn.addEventListener('click', commit);
+      quickInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+    }
   }
 
   // Редактирование связей: чекбоксы по текущим навыкам плана + селект каталога
@@ -3327,6 +3409,28 @@ function switchKanbanTaskMode(mode) {
   editWrap.style.display = isEdit ? 'grid' : 'none';
   saveBtn.style.display = isEdit ? 'inline-flex' : 'none';
   editBtn.style.display = isEdit ? 'none' : 'inline-flex';
+
+  // Когда заходим в режим редактирования — актуализируем поля
+  if (isEdit) {
+    try {
+      const modal = document.getElementById('kanbanTaskModal');
+      if (!modal) return;
+      const skillId = modal.dataset.skillId;
+      const index = parseInt(modal.dataset.index);
+      const activity = appState.progress?.[skillId]?.activities?.[index];
+      if (!activity) return;
+      const titleEl = document.getElementById('kanbanTaskTitle');
+      const descEl = document.getElementById('kanbanTaskDesc');
+      const expEl = document.getElementById('kanbanTaskExpected');
+      const comEl = document.getElementById('kanbanTaskComment');
+      const durEl = document.getElementById('kanbanTaskDuration');
+      if (titleEl) titleEl.value = activity.name || '';
+      if (descEl) descEl.value = activity.description || '';
+      if (expEl) expEl.value = activity.expectedResult || '';
+      if (comEl) comEl.value = activity.comment || '';
+      if (durEl) durEl.value = activity.duration || 1;
+    } catch (_) {}
+  }
 }
 
 function saveKanbanTaskModal() {
@@ -3340,7 +3444,13 @@ function saveKanbanTaskModal() {
   activity.name = document.getElementById('kanbanTaskTitle').value;
   activity.description = document.getElementById('kanbanTaskDesc').value;
   activity.expectedResult = document.getElementById('kanbanTaskExpected').value;
-  activity.comment = document.getElementById('kanbanTaskComment').value;
+  const commentVal = document.getElementById('kanbanTaskComment').value;
+  // сохраняем и в историю
+  if (commentVal && commentVal.trim().length > 0) {
+    if (!Array.isArray(activity.comments)) activity.comments = [];
+    activity.comments.push({ text: commentVal.trim(), at: Date.now() });
+  }
+  activity.comment = commentVal;
   const dur = parseInt(document.getElementById('kanbanTaskDuration').value) || activity.duration || 1;
   activity.duration = Math.max(1, dur);
   saveToLocalStorage();
