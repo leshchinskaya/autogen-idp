@@ -3387,7 +3387,14 @@ function renderProgressTracking() {
     return referenced;
   };
   
-  progressTracking.innerHTML = Object.entries(appState.progress).map(([skillId, skill]) => {
+  const ordered = Object.entries(appState.progress || {})
+    .map(([skillId, skill], idx) => ({ skillId, skill, idx, hasTasks: (skill?.activities || []).length > 0 }))
+    .sort((a, b) => {
+      if (a.hasTasks !== b.hasTasks) return a.hasTasks ? -1 : 1; // с задачами выше
+      return a.idx - b.idx;
+    });
+
+  progressTracking.innerHTML = ordered.map(({ skillId, skill }) => {
     const relatedOnly = isRelatedOnlySkill(skillId);
     // В процентах показываем взвешенный прогресс по задачам (учёт подзадач через recomputeAllProgress)
     const progressPercentage = relatedOnly ? 100 : Math.round(skill.overallProgress || 0);
