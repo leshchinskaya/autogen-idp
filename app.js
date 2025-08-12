@@ -3,6 +3,84 @@
 const CLOUD_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwqOobmbWA97CN7cJUQ6sQ8pO63ITTVqEhrhkLA-90pzjfIlRTbUmaXPQF1oerLmxxnfA/exec';
 let skillsData = { skills: {} };
 
+// --- Автосохранение в Sheets (глобально, чтобы вызывалось из любых обработчиков) ---
+let __autoCloudSaveTimer = null;
+let __autoCloudSaveInFlight = false;
+async function autoCloudSaveNow(reason) {
+  try {
+    const url = CLOUD_APPS_SCRIPT_URL;
+    if (!url) return;
+    const statusEl = document.getElementById('inlineCloudAutoSaveStatus');
+    if (statusEl) statusEl.textContent = 'сохраняем…';
+    const titleInput = document.getElementById('inlineCloudPlanTitleInput');
+    const inlineTitle = (titleInput?.value || '').trim();
+    if (inlineTitle) {
+      appState.ui = appState.ui || {};
+      appState.ui.cloudPlanTitle = inlineTitle;
+    }
+    const id = appState.ui?.cloudRecordId || '';
+    const form = new URLSearchParams();
+    let mode = '';
+    if (id) {
+      form.set('action', 'update');
+      form.set('id', id);
+      mode = 'update';
+    } else {
+      form.set('action', 'append');
+      mode = 'append';
+    }
+    const payload = { ...appState };
+    let titleVal = (appState.ui?.cloudPlanTitle || '').trim();
+    if (!titleVal) {
+      const name = appState.profile?.fullName || '';
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      titleVal = name ? `ИПР — ${name} (${y}-${m}-${d})` : `ИПР (${y}-${m}-${d})`;
+      appState.ui = appState.ui || {};
+      appState.ui.cloudPlanTitle = titleVal;
+    }
+    if (titleVal) {
+      payload.title = titleVal;
+      payload.nameidp = titleVal;
+      form.set('nameidp', titleVal);
+    }
+    form.set('payload', JSON.stringify(payload));
+    const res = await fetch(url, { method: 'POST', body: form });
+    const json = await res.json().catch(() => ({}));
+    if (json && json.ok) {
+      if (mode === 'append' && json.id) {
+        appState.ui.cloudRecordId = json.id;
+        saveToLocalStorage();
+        try {
+          const el = document.getElementById('inlineCloudCurrentRecord');
+          if (el) el.textContent = `id = ${json.id}`;
+        } catch (_) {}
+      }
+      if (statusEl) {
+        statusEl.textContent = '✓ сохранено';
+        setTimeout(() => { if (statusEl.textContent === '✓ сохранено') statusEl.textContent = ''; }, 1500);
+      }
+    } else {
+      console.warn('Auto cloud save failed', reason, json);
+      if (statusEl) statusEl.textContent = '⚠ ошибка';
+    }
+  } catch (e) {
+    console.warn('Auto cloud save error', reason, e);
+    const statusEl = document.getElementById('inlineCloudAutoSaveStatus');
+    if (statusEl) statusEl.textContent = '⚠ сеть';
+  }
+}
+function autoCloudSaveDebounced(reason) {
+  clearTimeout(__autoCloudSaveTimer);
+  __autoCloudSaveTimer = setTimeout(async () => {
+    if (__autoCloudSaveInFlight) return;
+    __autoCloudSaveInFlight = true;
+    try { await autoCloudSaveNow(reason); } finally { __autoCloudSaveInFlight = false; }
+  }, 600);
+}
+
 // Вспомогательные функции для CSV → модель приложения
 function slugify(text) {
   return String(text)
@@ -1493,6 +1571,86 @@ function setupEventListeners() {
     tabList.addEventListener('click', () => activate('list'));
     tabAnalysis?.addEventListener('click', () => activate('analysis'));
   }
+
+  // Автосохранение в Sheets при изменениях прогресса (debounce)
+  let __autoCloudSaveTimer = null;
+  let __autoCloudSaveInFlight = false;
+  async function autoCloudSaveNow(reason) {
+    try {
+      const url = CLOUD_APPS_SCRIPT_URL;
+      if (!url) return;
+      const statusEl = document.getElementById('inlineCloudAutoSaveStatus');
+      if (statusEl) statusEl.textContent = 'сохраняем…';
+      const titleInput = document.getElementById('inlineCloudPlanTitleInput');
+      const inlineTitle = (titleInput?.value || '').trim();
+      if (inlineTitle) {
+        appState.ui = appState.ui || {};
+        appState.ui.cloudPlanTitle = inlineTitle;
+      }
+      const id = appState.ui?.cloudRecordId || '';
+      const form = new URLSearchParams();
+      let mode = '';
+      if (id) {
+        form.set('action', 'update');
+        form.set('id', id);
+        mode = 'update';
+      } else {
+        form.set('action', 'append');
+        mode = 'append';
+      }
+      const payload = { ...appState };
+      let titleVal = (appState.ui?.cloudPlanTitle || '').trim();
+      if (!titleVal) {
+        const name = appState.profile?.fullName || '';
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        titleVal = name ? `ИПР — ${name} (${y}-${m}-${d})` : `ИПР (${y}-${m}-${d})`;
+        appState.ui = appState.ui || {};
+        appState.ui.cloudPlanTitle = titleVal;
+      }
+      if (titleVal) {
+        payload.title = titleVal;
+        payload.nameidp = titleVal;
+        form.set('nameidp', titleVal);
+      }
+      form.set('payload', JSON.stringify(payload));
+      const res = await fetch(url, { method: 'POST', body: form });
+      const json = await res.json().catch(() => ({}));
+      if (json && json.ok) {
+        if (mode === 'append' && json.id) {
+          appState.ui.cloudRecordId = json.id;
+          saveToLocalStorage();
+          try {
+            const el = document.getElementById('inlineCloudCurrentRecord');
+            if (el) el.textContent = `id = ${json.id}`;
+          } catch (_) {}
+        }
+        if (statusEl) {
+          statusEl.textContent = '✓ сохранено';
+          setTimeout(() => { if (statusEl.textContent === '✓ сохранено') statusEl.textContent = ''; }, 1500);
+        }
+      } else {
+        console.warn('Auto cloud save failed', reason, json);
+        if (statusEl) statusEl.textContent = '⚠ ошибка';
+      }
+    } catch (e) {
+      console.warn('Auto cloud save error', reason, e);
+      const statusEl = document.getElementById('inlineCloudAutoSaveStatus');
+      if (statusEl) statusEl.textContent = '⚠ сеть';
+    }
+  }
+  function autoCloudSaveDebounced(reason) {
+    clearTimeout(__autoCloudSaveTimer);
+    __autoCloudSaveTimer = setTimeout(async () => {
+      if (__autoCloudSaveInFlight) return;
+      __autoCloudSaveInFlight = true;
+      try { await autoCloudSaveNow(reason); } finally { __autoCloudSaveInFlight = false; }
+    }, 600);
+  }
+
+  
 
   // Kanban task modal events
   const kanbanModal = document.getElementById('kanbanTaskModal');
@@ -3169,6 +3327,7 @@ function renderProgressKanban() {
         saveToLocalStorage();
         recomputeAllProgress();
         renderProgress();
+        try { autoCloudSaveDebounced('kanban-drop'); } catch (_) {}
       } catch (_) {}
     });
   });
@@ -3278,6 +3437,7 @@ function openKanbanTaskModal(skillId, index) {
           saveToLocalStorage();
           try { syncProgressTaskToPlan(skillId, index); } catch(_) {}
           renderComments();
+          try { autoCloudSaveDebounced('delete-comment'); } catch (_) {}
         });
       });
     };
@@ -3312,6 +3472,7 @@ function openKanbanTaskModal(skillId, index) {
           setTimeout(() => { quickBtn.disabled = false; }, 400);
         } catch(_) {}
         try { syncProgressTaskToPlan(skillId, index); } catch(_) {}
+        try { autoCloudSaveDebounced('quick-comment'); } catch (_) {}
       };
       quickBtn.addEventListener('click', commit);
       quickInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
@@ -3349,6 +3510,7 @@ function openKanbanTaskModal(skillId, index) {
         // обновим Preview
         const rel = activity.relatedSkills || [];
         relatedWrap.innerHTML = rel.length ? rel.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ') : '<span class="text-secondary">Нет</span>';
+        try { autoCloudSaveDebounced('related-change'); } catch (_) {}
       });
     });
 
@@ -3377,6 +3539,7 @@ function openKanbanTaskModal(skillId, index) {
         // пересчитать дропдаун (убрать добавленный)
         addSelect.querySelector(`option[value="${id}"]`)?.remove();
         addSelect.value = '';
+        try { autoCloudSaveDebounced('related-add'); } catch (_) {}
       }
     };
   }
@@ -3458,6 +3621,7 @@ function saveKanbanTaskModal() {
   try { switchKanbanTaskMode('view'); } catch (_) {}
   try { syncProgressTaskToPlan(skillId, index); } catch (_) {}
   renderProgress();
+  try { autoCloudSaveDebounced('edit-task'); } catch (_) {}
 }
 
 window.toggleActivity = function(skillId, activityIndex) {
@@ -3469,11 +3633,13 @@ window.toggleActivity = function(skillId, activityIndex) {
   saveToLocalStorage();
   recomputeAllProgress();
   renderProgress();
+  try { autoCloudSaveDebounced('toggle-completed'); } catch (_) {}
 };
 
 window.updateActivityComment = function(skillId, activityIndex, comment) {
   appState.progress[skillId].activities[activityIndex].comment = comment;
   saveToLocalStorage();
+  try { autoCloudSaveDebounced('edit-comment'); } catch (_) {}
 };
 
 // План: редактирование задач в самом плане
