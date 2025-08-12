@@ -1996,6 +1996,179 @@ function getTaskWeightForSkill(activity, skillId, primarySkillId) {
   return denom > 0 ? 1 / denom : 1;
 }
 
+// --- Подзадачи: расчёт и руллап статуса/прогресса ---
+function parseChecklistToSubtasks(text) {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
+  const items = [];
+  for (const raw of lines) {
+    // match bullets: -, *, •, —, –
+    const bulletMatch = raw.match(/^([-*•—–]\s+)(.+)$/);
+    const numDotMatch = raw.match(/^(\d+)[\.)]\s+(.+)$/);
+    const checkboxMatch = raw.match(/^\[(?: |x|X)\]\s+(.+)$/);
+    let title = null;
+    if (checkboxMatch) {
+      title = checkboxMatch[1];
+    } else if (bulletMatch) {
+      title = bulletMatch[2];
+    } else if (numDotMatch) {
+      title = numDotMatch[2];
+    }
+    if (title) {
+      items.push({ title: title.trim(), description: '', expectedResult: '', done: false });
+    }
+  }
+  return items;
+}
+
+function computeSubtasksStats(activity) {
+  const list = Array.isArray(activity?.subtasks) ? activity.subtasks : [];
+  const total = list.length;
+  const done = list.filter(s => !!s.done).length;
+  return { total, done };
+}
+
+function getActivityCompletionRatio(activity) {
+  if (!activity) return 0;
+  if (activity.status === 'cancelled') return 1;
+  const { total, done } = computeSubtasksStats(activity);
+  if (total > 0) {
+    return total > 0 ? done / total : 0;
+  }
+  if (activity.completed || activity.status === 'done') return 1;
+  return 0;
+}
+
+function rollupActivityFromSubtasks(activity) {
+  if (!activity) return;
+  const { total, done } = computeSubtasksStats(activity);
+  if (total === 0) return; // нечего руллапить
+  if (done === 0) {
+    activity.completed = false;
+    // если раньше было done/cancelled — вернём в planned
+    activity.status = 'planned';
+  } else if (done < total) {
+    activity.completed = false;
+    activity.status = (activity.status === 'blocked') ? 'blocked' : 'doing';
+  } else {
+    activity.completed = true;
+    activity.status = 'done';
+  }
+}
+
+// Обновить содержимое открытой модалки, если она показывает эту же задачу
+function refreshKanbanModalIfCurrent(skillId, index, preferredMode) {
+  const modal = document.getElementById('kanbanTaskModal');
+  if (!modal || modal.style.display === 'none') return;
+  const curId = modal.dataset.skillId;
+  const curIdx = parseInt(modal.dataset.index);
+  if (curId === skillId && curIdx === index) {
+    openKanbanTaskModal(skillId, index);
+    if (preferredMode === 'edit') {
+      try { switchKanbanTaskMode('edit'); } catch (_) {}
+    }
+  }
+}
+
+// Построение редактора подзадач внутри модалки (режим редактирования)
+function ensureKanbanSubtasksEditor(skillId, index) {
+  const editWrap = document.getElementById('kanbanTaskEditSection');
+  if (!editWrap) return;
+  const subtaskEditId = 'kanbanEditSubtasks';
+  const prev = document.getElementById(subtaskEditId);
+  if (prev) prev.remove();
+  const act = appState.progress?.[skillId]?.activities?.[index];
+  if (!act) return;
+  const html = document.createElement('div');
+  html.id = subtaskEditId;
+  html.className = 'form-group task-field task-field--wide';
+  html.innerHTML = `
+    <label class="form-label">Подзадачи</label>
+    <div id="kanbanEditSubtasksList" style="display:grid; gap:6px;">
+      ${(Array.isArray(act.subtasks) ? act.subtasks : []).map((s, i) => `
+        <div class=\"card subtask-card\" style=\"padding:8px; display:grid; gap:6px;\">
+          <div style=\"display:flex; gap:6px; align-items:center;\">
+            <input class=\"form-control\" style=\"flex:1;\" type=\"text\" value=\"${escapeHtml(s.title || '')}\" placeholder=\"Название подзадачи\" data-subtitle-index=\"${i}\" />
+            <button class=\"btn btn--outline btn--xs\" data-subremove-index=\"${i}\">Удалить</button>
+          </div>
+          <div>
+            <label class=\"form-label\">Описание</label>
+            <textarea class=\"form-control\" rows=\"3\" data-subdesc-index=\"${i}\">${escapeHtml(s.description || '')}</textarea>
+          </div>
+          <div>
+            <label class=\"form-label\">Плановый результат</label>
+            <textarea class=\"form-control\" rows=\"3\" data-subexp-index=\"${i}\">${escapeHtml(s.expectedResult || '')}</textarea>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:6px;">
+      <button class="btn btn--outline btn--sm" id="kanbanEditAddSubtask" type="button">Добавить подзадачу</button>
+    </div>
+  `;
+  // Вставляем сразу под блоком "Плановый результат"
+  const expectedEl = document.getElementById('kanbanTaskExpected');
+  let anchor = null;
+  try { anchor = expectedEl ? expectedEl.closest('.task-field') : null; } catch(_) {}
+  if (anchor && anchor.parentNode) {
+    anchor.parentNode.insertBefore(html, anchor.nextSibling);
+  } else {
+    editWrap.appendChild(html);
+  }
+
+  const list = html.querySelector('#kanbanEditSubtasksList');
+  const bindSync = () => {
+    const a = appState.progress?.[skillId]?.activities?.[index];
+    if (!a) return;
+    const titles = list.querySelectorAll('[data-subtitle-index]');
+    const descs = list.querySelectorAll('[data-subdesc-index]');
+    const exps = list.querySelectorAll('[data-subexp-index]');
+    const max = Math.max(titles.length, descs.length, exps.length);
+    a.subtasks = Array.from({ length: max }).map((_, i) => ({
+      title: titles[i]?.value || '',
+      description: descs[i]?.value || '',
+      expectedResult: exps[i]?.value || '',
+      done: (Array.isArray(a.subtasks) && a.subtasks[i]) ? !!a.subtasks[i].done : false
+    }));
+    rollupActivityFromSubtasks(a);
+    saveToLocalStorage();
+    try { syncProgressTaskToPlan(skillId, index); } catch (_) {}
+  };
+
+  html.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t && (t.hasAttribute('data-subtitle-index') || t.hasAttribute('data-subdesc-index') || t.hasAttribute('data-subexp-index'))) {
+      bindSync();
+    }
+  });
+  html.addEventListener('click', (e) => {
+    const del = e.target.closest('[data-subremove-index]');
+    if (del) {
+      const delIdx = parseInt(del.getAttribute('data-subremove-index'));
+      const a = appState.progress?.[skillId]?.activities?.[index];
+      if (!a || !Array.isArray(a.subtasks)) return;
+      a.subtasks.splice(delIdx, 1);
+      saveToLocalStorage();
+      try { syncProgressTaskToPlan(skillId, index); } catch (_) {}
+      ensureKanbanSubtasksEditor(skillId, index);
+      return;
+    }
+    const add = e.target.closest('#kanbanEditAddSubtask');
+    if (add) {
+      e.preventDefault();
+      const a = appState.progress?.[skillId]?.activities?.[index];
+      if (!a) return;
+      if (!Array.isArray(a.subtasks)) a.subtasks = [];
+      a.subtasks.push({ title: 'Новая подзадача', description: '', expectedResult: '', done: false });
+      saveToLocalStorage();
+      try { syncProgressTaskToPlan(skillId, index); } catch (_) {}
+      ensureKanbanSubtasksEditor(skillId, index);
+    }
+  });
+}
+
 function findSkillByName(name) {
   const lower = String(name || '').trim().toLowerCase();
   if (!lower) return null;
@@ -2092,9 +2265,9 @@ function recomputeAllProgress() {
   Object.entries(appState.progress || {}).forEach(([skillId, plan]) => {
     const items = collectTasksForSkill(skillId);
     const total = items.reduce((s, x) => s + x.weight, 0);
-    const done = items.reduce((s, x) => s + ((x.act.completed || x.act.status === 'done' || x.act.status === 'cancelled') ? x.weight : 0), 0);
-    plan.completedActivities = Math.round(done); // отображаем как целое; при желании можно хранить дробно
-    plan.overallProgress = total > 0 ? (done / total) * 100 : 0;
+    const contribution = items.reduce((s, x) => s + (x.weight * getActivityCompletionRatio(x.act)), 0);
+    plan.completedActivities = Math.round(contribution); // для обратной совместимости
+    plan.overallProgress = total > 0 ? (contribution / total) * 100 : 0;
   });
 }
 
@@ -2607,6 +2780,30 @@ function renderPlan() {
                 <button type="button" class="btn btn--outline btn--sm" onclick="addRelatedSkillById('${skillId}', ${idx}, document.getElementById('relatedAdd-${skillId}-${idx}').value)">Добавить</button>
               </div>
             </div>
+            <div class="form-group" style="margin-bottom:8px;">
+              <label class="form-label">Подзадачи</label>
+              <div style="display:grid; gap:6px;" id="subtasks-${skillId}-${idx}">
+                ${Array.isArray(activity.subtasks) && activity.subtasks.length ? activity.subtasks.map((s, si) => `
+                  <div class=\"card subtask-card\" style=\"padding:8px; display:grid; gap:6px;\">
+                    <div style=\"display:flex; gap:6px; align-items:center;\">
+                      <input class=\"form-control\" style=\"flex:1;\" type=\"text\" value=\"${escapeHtml(s.title || '')}\" placeholder=\"Название подзадачи\" onchange=\"updatePlanSubtask('${skillId}', ${idx}, ${si}, this.value)\" />
+                      <button class=\"btn btn--outline btn--xs\" onclick=\"removePlanSubtask('${skillId}', ${idx}, ${si})\">Удалить</button>
+                    </div>
+                    <div>
+                      <label class=\"form-label\">Описание</label>
+                      <textarea class=\"form-control\" rows=\"3\" onchange=\"updatePlanSubtaskDesc('${skillId}', ${idx}, ${si}, this.value)\">${escapeHtml(s.description || '')}</textarea>
+                    </div>
+                    <div>
+                      <label class=\"form-label\">Плановый результат</label>
+                      <textarea class=\"form-control\" rows=\"3\" onchange=\"updatePlanSubtaskExpected('${skillId}', ${idx}, ${si}, this.value)\">${escapeHtml(s.expectedResult || '')}</textarea>
+                    </div>
+                  </div>
+                `).join('') : '<div style="font-size:12px;color:var(--color-text-secondary)">Пока нет подзадач</div>'}
+              </div>
+              <div style="margin-top:6px;">
+                <button class="btn btn--outline btn--sm" onclick="addPlanSubtask('${skillId}', ${idx})">Добавить подзадачу</button>
+              </div>
+            </div>
             <div style="display:flex; gap: 8px; align-items:center;">
               <label style="font-size:12px;color:var(--color-text-secondary)">Длительность (нед.)</label>
               <input class="form-control" type="number" min="1" style="width:100px" value="${activity.duration}" onchange="updatePlanActivity('${skillId}', ${idx}, { duration: parseInt(this.value)||1 })" />
@@ -2710,7 +2907,18 @@ function initializeProgress() {
       ...plan,
       completedActivities: 0,
       overallProgress: 0,
-      activities: plan.activities.map(activity => ({ ...activity, status: activity.status || (activity.completed ? 'done' : 'planned') }))
+      activities: plan.activities.map(activity => ({
+        ...activity,
+        status: activity.status || (activity.completed ? 'done' : 'planned'),
+        subtasks: Array.isArray(activity.subtasks)
+          ? activity.subtasks.map(s => ({
+              title: s.title || String(s || 'Подзадача'),
+              description: s.description || '',
+              expectedResult: s.expectedResult || '',
+              done: !!s.done
+            }))
+          : activity.subtasks
+      }))
     };
   });
   
@@ -2733,6 +2941,14 @@ function mergePlanIntoProgress() {
         activities: (plan.activities || []).map(a => ({
           ...a,
           status: a.status || (a.completed ? 'done' : 'planned'),
+        subtasks: Array.isArray(a.subtasks)
+          ? a.subtasks.map(s => ({
+              title: s.title || String(s || 'Подзадача'),
+              description: s.description || '',
+              expectedResult: s.expectedResult || '',
+              done: !!s.done
+            }))
+          : a.subtasks,
           completed: !!a.completed
         }))
       };
@@ -2750,6 +2966,14 @@ function mergePlanIntoProgress() {
         target.activities.push({
           ...pAct,
           status: pAct.status || 'planned',
+          subtasks: Array.isArray(pAct.subtasks)
+            ? pAct.subtasks.map(s => ({
+                title: s.title || String(s || 'Подзадача'),
+                description: s.description || '',
+                expectedResult: s.expectedResult || '',
+                done: !!s.done
+              }))
+            : pAct.subtasks,
           completed: !!pAct.completed
         });
       }
@@ -2780,6 +3004,14 @@ function syncProgressTaskToPlan(skillId, activityIndex) {
   const patchFields = ['name', 'description', 'expectedResult', 'duration', 'relatedSkills'];
   if (idx >= 0) {
     patchFields.forEach(k => { plan.activities[idx][k] = act[k]; });
+    if (Array.isArray(act.subtasks)) {
+      plan.activities[idx].subtasks = act.subtasks.map(s => ({
+        title: s.title || String(s || 'Подзадача'),
+        description: s.description || '',
+        expectedResult: s.expectedResult || '',
+        done: !!s.done
+      }));
+    }
   } else {
     plan.activities.push({
       id: act.id,
@@ -2792,7 +3024,13 @@ function syncProgressTaskToPlan(skillId, activityIndex) {
       description: act.description || '',
       expectedResult: act.expectedResult || '',
       relatedSkills: Array.isArray(act.relatedSkills) ? [...act.relatedSkills] : [],
-      skillWeights: act.skillWeights
+      skillWeights: act.skillWeights,
+      subtasks: Array.isArray(act.subtasks) ? act.subtasks.map(s => ({
+        title: s.title || String(s || 'Подзадача'),
+        description: s.description || '',
+        expectedResult: s.expectedResult || '',
+        done: !!s.done
+      })) : undefined
     });
   }
   // Пересчитать длительность
@@ -3151,10 +3389,10 @@ function renderProgressTracking() {
   
   progressTracking.innerHTML = Object.entries(appState.progress).map(([skillId, skill]) => {
     const relatedOnly = isRelatedOnlySkill(skillId);
-    const progressPercentage = relatedOnly
-      ? 100
-      : (skill.activities.length > 0 ? (skill.completedActivities / skill.activities.length) * 100 : 0);
-    const allDone = relatedOnly || (skill.activities.length > 0 && skill.completedActivities === skill.activities.length);
+    // В процентах показываем взвешенный прогресс по задачам (учёт подзадач через recomputeAllProgress)
+    const progressPercentage = relatedOnly ? 100 : Math.round(skill.overallProgress || 0);
+    // Для бейджа "всё сделано" используем строгую проверку: все активности либо done/cancelled
+    const allDone = relatedOnly || (skill.activities.length > 0 && skill.activities.every(a => (getActivityCompletionRatio(a) >= 1)));
     const collapsed = !!(appState.ui && appState.ui.collapsedSkills && appState.ui.collapsedSkills[skillId]);
     
     return `
@@ -3186,8 +3424,29 @@ function renderProgressTracking() {
                     <span>Уровень ${activity.level}</span>
                     <span>~${activity.duration} нед.</span>
                   </div>
+                  ${Array.isArray(activity.subtasks) && activity.subtasks.length ? (() => {
+                    const stats = computeSubtasksStats(activity);
+                    const pct = Math.round((stats.done / Math.max(1, stats.total)) * 100);
+                    return `
+                      <div class=\"activity-meta\" style=\"margin-top:6px; display:flex; gap:8px; align-items:center;\">
+                        <span>Подзадачи: ${stats.done}/${stats.total}</span>
+                        <div class=\"skill-progress-bar\" style=\"flex:1; height:6px;\">
+                          <div class=\"skill-progress-fill\" style=\"width:${pct}%\"></div>
+                        </div>
+                      </div>
+                      <div style=\"margin-top:8px; display:grid; gap:6px;\">
+                        ${activity.subtasks.map((s, i) => `
+                          <label class=\"checkbox\" style=\"align-items:center; gap:8px;\">
+                            <input type=\"checkbox\" ${s.done ? 'checked' : ''} onchange=\"toggleSubtask('${skillId}', ${index}, ${i})\" />
+                            <span>${escapeHtml(s.title || 'Подзадача')}</span>
+                          </label>
+                        `).join('')}
+                      </div>
+                    `;
+                  })() : ''}
                   <div style="margin:6px 0 0;">
                     <button class="btn btn--outline btn--sm" onclick="openTaskEdit('${skillId}', ${index})">Редактировать</button>
+                    <button class="btn btn--outline btn--sm" style="margin-left:6px;" onclick="progressParseDescToSubtasks('${skillId}', ${index})">Сделать из описания подзадачи</button>
                   </div>
                   
                   <textarea class="form-control activity-comment" 
@@ -3218,6 +3477,24 @@ function renderProgressTracking() {
 
   // снято редактирование связанных навыков в режиме списка
 }
+
+// Преобразовать описание в подзадачи из режима Списка
+window.progressParseDescToSubtasks = function(skillId, index) {
+  const act = appState.progress?.[skillId]?.activities?.[index];
+  if (!act) return;
+  const items = parseChecklistToSubtasks(act.description || '');
+  if (!items || items.length === 0) {
+    alert('В описании не найден чек‑лист (строки, начинающиеся с -, *, 1., [ ] ...)');
+    return;
+  }
+  act.subtasks = items;
+  rollupActivityFromSubtasks(act);
+  saveToLocalStorage();
+  try { syncProgressTaskToPlan(skillId, index); } catch (_) {}
+  recomputeAllProgress();
+  renderProgress();
+  try { autoCloudSaveDebounced('parse-desc-subtasks-list'); } catch (_) {}
+};
 
 function renderProgressKanban() {
   const mount = document.getElementById('progressKanban');
@@ -3322,8 +3599,19 @@ function renderProgressKanban() {
         const toLane = zone.getAttribute('data-lane');
         const activity = appState.progress[payload.skillId]?.activities?.[payload.index];
         if (!activity) return;
-        activity.status = toLane;
-        activity.completed = (toLane === 'done' || toLane === 'cancelled');
+        // Явное ручное перемещение: уважаем статус пользователя
+        if (toLane === 'done' || toLane === 'cancelled') {
+          // Перенесли в завершённые — допускаем автозавершение подзадач
+          if (Array.isArray(activity.subtasks) && activity.subtasks.length > 0) {
+            activity.subtasks.forEach(s => { s.done = true; });
+          }
+          activity.status = toLane;
+          activity.completed = true;
+        } else {
+          // Перенесли в planned/doing/blocked — не трогаем подзадачи и не руллапим
+          activity.status = toLane;
+          activity.completed = false;
+        }
         saveToLocalStorage();
         recomputeAllProgress();
         renderProgress();
@@ -3385,6 +3673,33 @@ function openKanbanTaskModal(skillId, index) {
           ${activity.expectedResult ? `<div class="activity-expected"><strong>Ожидаемый результат:</strong> ${linkify(activity.expectedResult)}</div>` : ''}
           ${(activity.relatedSkills && activity.relatedSkills.length) ? `<div class=\"activity-related\">Связанные навыки: ${activity.relatedSkills.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ')}</div>` : ''}
           <div class="activity-meta"><span>Уровень ${activity.level}</span><span>~${activity.duration} нед.</span></div>
+          <div style="margin:6px 0; display:flex; gap:8px;">
+            <button class="btn btn--outline btn--sm" id="btnParseDescToSubtasks">Сделать из описания подзадачи</button>
+          </div>
+          ${Array.isArray(activity.subtasks) && activity.subtasks.length ? (() => {
+            const stats = computeSubtasksStats(activity);
+            const pct = Math.round((stats.done / Math.max(1, stats.total)) * 100);
+            return `
+              <div class="activity-meta" style="margin-top:6px; display:flex; gap:8px; align-items:center;">
+                <span>Подзадачи: ${stats.done}/${stats.total}</span>
+                <div class="skill-progress-bar" style="flex:1; height:6px;">
+                  <div class="skill-progress-fill" style="width:${pct}%"></div>
+                </div>
+              </div>
+              <div style="margin-top:8px; display:grid; gap:6px;">
+                ${activity.subtasks.map((s, i) => `
+                  <div class=\"card subtask-card\" style=\"padding:6px; display:grid; gap:4px;\">
+                    <label class=\"checkbox\" style=\"align-items:center; gap:8px;\">
+                      <input type=\"checkbox\" ${s.done ? 'checked' : ''} onchange=\"toggleSubtask('${skillId}', ${index}, ${i})\" />
+                      <span>${escapeHtml(s.title || 'Подзадача')}</span>
+                    </label>
+                    ${s.description ? `<div class=\\"activity-desc\\">${linkify(s.description)}</div>` : ''}
+                    ${s.expectedResult ? `<div class=\\"activity-expected\\"><strong>Ожидаемый результат:</strong> ${linkify(s.expectedResult)}</div>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            `;
+          })() : ''}
           <div style="margin-top:8px; display:flex; gap:6px; align-items:flex-start;">
             <input id="kanbanQuickComment" class="form-control" placeholder="Быстрый комментарий" style="flex:1;" />
             <button class="btn btn--primary" id="kanbanQuickCommentBtn">Добавить</button>
@@ -3477,6 +3792,27 @@ function openKanbanTaskModal(skillId, index) {
       quickBtn.addEventListener('click', commit);
       quickInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
     }
+
+    // Bind: parse description -> subtasks
+    const parseBtn = document.getElementById('btnParseDescToSubtasks');
+    if (parseBtn) {
+      parseBtn.addEventListener('click', () => {
+        const source = activity.description || '';
+        const items = parseChecklistToSubtasks(source);
+        if (!items || items.length === 0) {
+          alert('В описании не найден чек‑лист (строки, начинающиеся с -, *, 1., [ ] ...)');
+          return;
+        }
+        activity.subtasks = items;
+        rollupActivityFromSubtasks(activity);
+        saveToLocalStorage();
+        try { syncProgressTaskToPlan(skillId, index); } catch (_) {}
+        recomputeAllProgress();
+        renderProgress();
+        refreshKanbanModalIfCurrent(skillId, index, 'view');
+        try { autoCloudSaveDebounced('parse-desc-subtasks'); } catch (_) {}
+      });
+    }
   }
 
   // Редактирование связей: чекбоксы по текущим навыкам плана + селект каталога
@@ -3544,6 +3880,9 @@ function openKanbanTaskModal(skillId, index) {
     };
   }
 
+  // Редактор подзадач: пересобрать секцию (вынесено в ensureKanbanSubtasksEditor)
+  try { ensureKanbanSubtasksEditor(skillId, index); } catch (_) {}
+
   modal.style.display = 'block';
   modal.setAttribute('aria-hidden', 'false');
 }
@@ -3568,6 +3907,9 @@ function switchKanbanTaskMode(mode) {
   const editBtn = document.getElementById('editKanbanTaskBtn');
   if (!viewMount || !editWrap || !saveBtn || !editBtn) return;
   const isEdit = mode === 'edit';
+  const modal = document.getElementById('kanbanTaskModal');
+  const skillId = modal?.dataset?.skillId;
+  const index = modal?.dataset?.index ? parseInt(modal.dataset.index) : NaN;
   viewMount.style.display = isEdit ? 'none' : 'block';
   editWrap.style.display = isEdit ? 'grid' : 'none';
   saveBtn.style.display = isEdit ? 'inline-flex' : 'none';
@@ -3576,10 +3918,8 @@ function switchKanbanTaskMode(mode) {
   // Когда заходим в режим редактирования — актуализируем поля
   if (isEdit) {
     try {
-      const modal = document.getElementById('kanbanTaskModal');
       if (!modal) return;
-      const skillId = modal.dataset.skillId;
-      const index = parseInt(modal.dataset.index);
+      if (!skillId || !Number.isInteger(index)) return;
       const activity = appState.progress?.[skillId]?.activities?.[index];
       if (!activity) return;
       const titleEl = document.getElementById('kanbanTaskTitle');
@@ -3593,6 +3933,11 @@ function switchKanbanTaskMode(mode) {
       if (comEl) comEl.value = activity.comment || '';
       if (durEl) durEl.value = activity.duration || 1;
     } catch (_) {}
+  } else {
+    // Выходим из режима редактирования: пересоберём view, чтобы отобразить свежие данные
+    if (skillId && Number.isInteger(index)) {
+      try { openKanbanTaskModal(skillId, index); } catch (_) {}
+    }
   }
 }
 
@@ -3624,11 +3969,35 @@ function saveKanbanTaskModal() {
   try { autoCloudSaveDebounced('edit-task'); } catch (_) {}
 }
 
+// Тоггл подзадачи из модалки/списка
+window.toggleSubtask = function(skillId, activityIndex, subIndex) {
+  const act = appState.progress?.[skillId]?.activities?.[activityIndex];
+  if (!act || !Array.isArray(act.subtasks) || !act.subtasks[subIndex]) return;
+  act.subtasks[subIndex].done = !act.subtasks[subIndex].done;
+  // Авто-руллап статуса родителя
+  rollupActivityFromSubtasks(act);
+  saveToLocalStorage();
+  try { syncProgressTaskToPlan(skillId, activityIndex); } catch (_) {}
+  recomputeAllProgress();
+  renderProgress();
+  refreshKanbanModalIfCurrent(skillId, activityIndex, 'view');
+  try { autoCloudSaveDebounced('toggle-subtask'); } catch (_) {}
+};
+
 window.toggleActivity = function(skillId, activityIndex) {
   const activity = appState.progress[skillId].activities[activityIndex];
   activity.completed = !activity.completed;
   // Если вручную отмечаем выполненным — ставим done, если снимаем — planned
-  activity.status = activity.completed ? 'done' : (activity.status === 'done' || activity.status === 'cancelled' ? 'planned' : activity.status);
+  if (activity.completed) {
+    // Завершили вручную: отметим подзадачи выполненными и переведём в done
+    if (Array.isArray(activity.subtasks) && activity.subtasks.length > 0) {
+      activity.subtasks.forEach(s => { s.done = true; });
+    }
+    activity.status = 'done';
+  } else {
+    // Сняли выполнение: переводим в planned, подзадачи не трогаем
+    activity.status = 'planned';
+  }
   
   saveToLocalStorage();
   recomputeAllProgress();
@@ -3653,6 +4022,45 @@ window.updatePlanActivity = function(skillId, idx, patch) {
     plan.totalDuration = plan.activities.reduce((sum, a) => sum + (a.duration || 0), 0);
   }
   saveToLocalStorage();
+};
+
+// Подзадачи в Плане (редактор структуры)
+window.addPlanSubtask = function(skillId, idx) {
+  const item = appState.developmentPlan[skillId]?.activities?.[idx];
+  if (!item) return;
+  if (!Array.isArray(item.subtasks)) item.subtasks = [];
+  item.subtasks.push({ title: 'Новая подзадача', description: '', expectedResult: '', done: false });
+  saveToLocalStorage();
+  renderPlan();
+};
+
+window.updatePlanSubtask = function(skillId, idx, subIdx, title) {
+  const item = appState.developmentPlan[skillId]?.activities?.[idx];
+  if (!item || !Array.isArray(item.subtasks) || !item.subtasks[subIdx]) return;
+  item.subtasks[subIdx].title = title;
+  saveToLocalStorage();
+};
+
+window.updatePlanSubtaskDesc = function(skillId, idx, subIdx, text) {
+  const item = appState.developmentPlan[skillId]?.activities?.[idx];
+  if (!item || !Array.isArray(item.subtasks) || !item.subtasks[subIdx]) return;
+  item.subtasks[subIdx].description = text;
+  saveToLocalStorage();
+};
+
+window.updatePlanSubtaskExpected = function(skillId, idx, subIdx, text) {
+  const item = appState.developmentPlan[skillId]?.activities?.[idx];
+  if (!item || !Array.isArray(item.subtasks) || !item.subtasks[subIdx]) return;
+  item.subtasks[subIdx].expectedResult = text;
+  saveToLocalStorage();
+};
+
+window.removePlanSubtask = function(skillId, idx, subIdx) {
+  const item = appState.developmentPlan[skillId]?.activities?.[idx];
+  if (!item || !Array.isArray(item.subtasks)) return;
+  item.subtasks.splice(subIdx, 1);
+  saveToLocalStorage();
+  renderPlan();
 };
 
 window.addPlanActivity = function(skillId) {
