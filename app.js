@@ -3746,10 +3746,13 @@ function openKanbanTaskModal(skillId, index) {
         const dt = new Date(c.at || Date.now()).toLocaleString();
         return `<div class="card" style="padding:8px; display:flex; gap:8px; justify-content:space-between; align-items:flex-start;">
                   <div style="min-width:0;">
-                    <div style="font-size:12px; color:var(--color-text-secondary); margin-bottom:4px;">${dt}</div>
+                    <div style="font-size:12px; color:var(--color-text-secondary); margin-bottom:4px;">${dt}${c.edited ? ' (изменено)' : ''}</div>
                     <div class="activity-desc">${linkify(c.text || '')}</div>
                   </div>
-                  <button class="btn btn--outline btn--xs" data-del-comment-at="${c.at}">Удалить</button>
+                  <div style="display:flex; gap:6px;">
+                    <button class="btn btn--outline btn--xs" data-edit-comment-at="${c.at}" title="Редактировать">✏️</button>
+                    <button class="btn btn--outline btn--xs" data-del-comment-at="${c.at}" title="Удалить">🗑️</button>
+                  </div>
                 </div>`;
       }).join('');
       // bind deletes
@@ -3768,6 +3771,52 @@ function openKanbanTaskModal(skillId, index) {
           try { syncProgressTaskToPlan(skillId, index); } catch(_) {}
           renderComments();
           try { autoCloudSaveDebounced('delete-comment'); } catch (_) {}
+        });
+      });
+      // bind edits (inline editor)
+      listEl.querySelectorAll('[data-edit-comment-at]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const at = parseInt(btn.getAttribute('data-edit-comment-at'));
+          ensureCommentsArray();
+          const item = (activity.comments || []).find(c => c.at === at);
+          if (!item) return;
+          const card = btn.closest('.card');
+          if (!card) return;
+          const editorHtml = `
+            <div style="min-width:0; flex:1;">
+              <div style="font-size:12px; color:var(--color-text-secondary); margin-bottom:4px;">${new Date(item.at||Date.now()).toLocaleString()}</div>
+              <textarea class="form-control" style="min-height:72px;">${escapeHtml(item.text || '')}</textarea>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <button class="btn btn--primary btn--xs" data-save-edit="${at}">Сохранить</button>
+              <button class="btn btn--outline btn--xs" data-cancel-edit="${at}">Отмена</button>
+            </div>`;
+          card.innerHTML = editorHtml;
+          const saveBtn = card.querySelector(`[data-save-edit="${at}"]`);
+          const cancelBtn = card.querySelector(`[data-cancel-edit="${at}"]`);
+          const textarea = card.querySelector('textarea');
+          const commitEdit = () => {
+            const newText = (textarea.value || '').trim();
+            const oldAt = item.at;
+            item.text = newText;
+            item.at = Date.now();
+            item.edited = true;
+            if (activity.commentAt === oldAt) {
+              activity.comment = newText;
+              activity.commentAt = item.at;
+            }
+            saveToLocalStorage();
+            try { syncProgressTaskToPlan(skillId, index); } catch(_) {}
+            renderComments();
+            try {
+              const status = document.getElementById('kanbanQuickCommentStatus');
+              if (status) { status.style.display = 'block'; setTimeout(() => { status.style.display = 'none'; }, 1000); }
+            } catch(_) {}
+            try { autoCloudSaveDebounced('edit-comment'); } catch (_) {}
+          };
+          if (saveBtn) saveBtn.addEventListener('click', commitEdit);
+          if (cancelBtn) cancelBtn.addEventListener('click', () => renderComments());
+          if (textarea) textarea.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitEdit(); } });
         });
       });
     };

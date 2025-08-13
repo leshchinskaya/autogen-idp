@@ -1110,14 +1110,6 @@ select.form-control {
   gap: var(--space-12);
 }
 
-/* Subtask cards highlight (Plan + Progress) */
-.subtask-card {
-  /* голубой оттенок */
-  background: rgba(191, 219, 254, 0.28); /* blue-200 with alpha */
-  border: 1px dashed rgba(59, 130, 246, 0.55); /* blue-500 */
-  border-radius: var(--radius-base);
-}
-
 .activity-desc-preview {
   margin-top: 6px;
   padding-left: 18px;
@@ -1409,10 +1401,6 @@ select.form-control {
   color: var(--color-text-secondary);
   margin-bottom: var(--space-8);
 }
-
-/* Компактный прогресс для подзадач внутри карточек */
-.activity-meta .skill-progress-bar { height: 6px; }
-.activity-meta .skill-progress-fill { height: 100%; }
 
 .activity-desc,
 .activity-expected {
