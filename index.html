@@ -466,7 +466,16 @@ Firebase	2"></textarea>
                 <div id="kanbanTaskEditSection" class="task-form-grid" style="display:none;">
                 <div class="form-group task-field task-field--wide">
                     <label class="form-label">Название</label>
-                    <input type="text" id="kanbanTaskTitle" class="form-control" />
+                    <div style="display:flex; gap:8px; align-items:center;">
+                      <input type="text" id="kanbanTaskTitle" class="form-control" />
+                      <select id="kanbanTaskPriority" class="form-control" style="max-width:200px;">
+                        <option value="">Нет приоритета</option>
+                        <option value="urgent">Срочный</option>
+                        <option value="high">Высокий</option>
+                        <option value="medium">Средний</option>
+                        <option value="low">Низкий</option>
+                      </select>
+                    </div>
                 </div>
                 <div class="form-group task-field task-field--wide">
                     <label class="form-label">Описание</label>

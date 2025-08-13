@@ -1371,6 +1371,14 @@ select.form-control {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-base);
   padding: var(--space-16);
+  position: relative;
+}
+
+.priority-badge-corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
 }
 
 .activity-checkbox-container {
@@ -1524,6 +1532,18 @@ select.form-control {
 
 .kanban-card .title { font-weight: var(--font-weight-medium); color: var(--color-text); margin-bottom: 4px; }
 .kanban-card .meta { font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+
+/* Priority accents for kanban cards */
+.kanban-card.priority-urgent { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15); }
+.kanban-card.priority-high   { border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15); }
+.kanban-card.priority-medium { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.10); }
+.kanban-card.priority-low    { border-color: var(--color-border); opacity: 0.9; }
+
+.priority-badge { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:9999px; font-size:11px; border:1px solid var(--color-border); }
+.priority-badge.urgent { background: rgba(239, 68, 68, 0.1); border-color:#ef4444; color:#ef4444; }
+.priority-badge.high   { background: rgba(245, 158, 11, 0.1); border-color:#f59e0b; color:#b45309; }
+.priority-badge.medium { background: rgba(59, 130, 246, 0.1); border-color:#3b82f6; color:#1d4ed8; }
+.priority-badge.low    { background: rgba(15, 23, 42, 0.05); color: var(--color-text-secondary); }
 
 .kanban-epic { margin-bottom: var(--space-12); }
 .kanban-epic-header {

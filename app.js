@@ -592,7 +592,7 @@ async function renderSkillsKbPicker() {
                 <input type="checkbox" class="kb-task-chk" data-kbid="${(t.__source + '|' + (t.skillName||'') + '|' + (t.title||'') + '|' + (t.description||'') + '|' + (t.criteria||'')).replace(/"/g,'&quot;')}">
                 <div style="min-width:0; display:flex; flex-direction:column; gap:6px;">
                   <strong class="activity-name" style="white-space:normal;">${escapeHtml(t.goal || t.title)}</strong>
-                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <div style="display:flex; gap:8px; flex-wrap;">
                     ${t.skillName ? `<span class="tag tag--skill" title="Навык">${escapeHtml(t.skillName)}</span>` : ''}
                     <span class="tag tag--level" title="Уровень">Уровень: ${(['','Базовые знания','Уверенные значения','Глубокие знания','Любая сложность'])[Number.isFinite(t.level) ? t.level : 1] || ('Уровень ' + (Number.isFinite(t.level) ? t.level : 1))}</span>
                     ${Number.isFinite(t.durationWeeks) && t.durationWeeks > 0 ? `<span class="tag tag--duration" title="Длительность">~${t.durationWeeks} нед.</span>` : ''}
@@ -2815,6 +2815,14 @@ function renderPlan() {
             <div style="display:flex; gap: 8px; align-items:center;">
               <label style="font-size:12px;color:var(--color-text-secondary)">Длительность (нед.)</label>
               <input class="form-control" type="number" min="1" style="width:100px" value="${activity.duration}" onchange="updatePlanActivity('${skillId}', ${idx}, { duration: parseInt(this.value)||1 })" />
+               <label style="font-size:12px;color:var(--color-text-secondary)">Приоритет</label>
+               <select class="form-control" style="width:140px" onchange="updatePlanActivity('${skillId}', ${idx}, { priority: this.value })">
+                 <option value="" ${!activity.priority ? 'selected' : ''}>Нет</option>
+                 <option value="urgent" ${activity.priority==='urgent' ? 'selected' : ''}>Срочный</option>
+                 <option value="high" ${activity.priority==='high' ? 'selected' : ''}>Высокий</option>
+                 <option value="medium" ${activity.priority==='medium' ? 'selected' : ''}>Средний</option>
+                 <option value="low" ${activity.priority==='low' ? 'selected' : ''}>Низкий</option>
+               </select>
               <button class="btn btn--outline btn--sm" onclick="removePlanActivity('${skillId}', ${idx})">Удалить</button>
             </div>
           </div>
@@ -2918,6 +2926,7 @@ function initializeProgress() {
       activities: plan.activities.map(activity => ({
         ...activity,
         status: activity.status || (activity.completed ? 'done' : 'planned'),
+        priority: activity.priority || '',
         subtasks: Array.isArray(activity.subtasks)
           ? activity.subtasks.map(s => ({
               title: s.title || String(s || 'Подзадача'),
@@ -2949,6 +2958,7 @@ function mergePlanIntoProgress() {
         activities: (plan.activities || []).map(a => ({
           ...a,
           status: a.status || (a.completed ? 'done' : 'planned'),
+          priority: a.priority || '',
         subtasks: Array.isArray(a.subtasks)
           ? a.subtasks.map(s => ({
               title: s.title || String(s || 'Подзадача'),
@@ -2974,6 +2984,7 @@ function mergePlanIntoProgress() {
         target.activities.push({
           ...pAct,
           status: pAct.status || 'planned',
+          priority: pAct.priority || '',
           subtasks: Array.isArray(pAct.subtasks)
             ? pAct.subtasks.map(s => ({
                 title: s.title || String(s || 'Подзадача'),
@@ -3009,7 +3020,7 @@ function syncProgressTaskToPlan(skillId, activityIndex) {
   }
   const plan = appState.developmentPlan[skillId];
   const idx = (plan.activities || []).findIndex(a => a.id === act.id);
-  const patchFields = ['name', 'description', 'expectedResult', 'duration', 'relatedSkills'];
+  const patchFields = ['name', 'description', 'expectedResult', 'duration', 'relatedSkills', 'priority'];
   if (idx >= 0) {
     patchFields.forEach(k => { plan.activities[idx][k] = act[k]; });
     if (Array.isArray(act.subtasks)) {
@@ -3426,16 +3437,17 @@ function renderProgressTracking() {
         <div class="progress-activities">
           ${skill.activities.map((activity, index) => `
             <div class="progress-activity ${activity.completed ? 'activity-completed' : ''}">
+              ${activity.priority ? `<span class="priority-badge ${activity.priority} priority-badge-corner">${activity.priority === 'urgent' ? 'Срочный' : activity.priority === 'high' ? 'Высокий' : activity.priority === 'medium' ? 'Средний' : 'Низкий'}</span>` : ''}
               <div class="activity-checkbox-container">
                 <input type="checkbox" class="activity-checkbox" 
                        ${activity.completed ? 'checked' : ''}
                        onchange="toggleActivity('${skillId}', ${index})">
                 <div class="activity-info">
                   <h4 class="activity-name">${activity.name}</h4>
-                  ${activity.description ? `<div class="activity-desc">${linkify(activity.description)}</div>` : ''}
-                  ${activity.expectedResult ? `<div class="activity-expected"><strong>Ожидаемый результат:</strong> ${linkify(activity.expectedResult)}</strong></div>` : ''}
+                  ${activity.description ? `<div class=\"activity-desc\">${linkify(activity.description)}</div>` : ''}
+                  ${activity.expectedResult ? `<div class=\"activity-expected\"><strong>Ожидаемый результат:</strong> ${linkify(activity.expectedResult)}</strong></div>` : ''}
                   ${(activity.relatedSkills && activity.relatedSkills.length) ? `<div class=\"activity-related\">Связанные навыки: ${activity.relatedSkills.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ')}</div>` : ''}
-                  <div class="activity-meta">
+                  <div class=\"activity-meta\">
                     <span>Уровень ${activity.level}</span>
                     <span>~${activity.duration} нед.</span>
                   </div>
@@ -3459,9 +3471,9 @@ function renderProgressTracking() {
                       </div>
                     `;
                   })() : ''}
-                  <div style="margin:6px 0 0;">
-                    <button class="btn btn--outline btn--sm" onclick="openTaskEdit('${skillId}', ${index})">Редактировать</button>
-                    <button class="btn btn--outline btn--sm" style="margin-left:6px;" onclick="progressParseDescToSubtasks('${skillId}', ${index})">Сделать из описания подзадачи</button>
+             <div style=\"margin:6px 0 0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;\">
+                    <button class=\"btn btn--outline btn--sm\" onclick=\"openTaskEdit('${skillId}', ${index})\">Редактировать</button>
+                    <button class=\"btn btn--outline btn--sm\" style=\"margin-left:6px;\" onclick=\"progressParseDescToSubtasks('${skillId}', ${index})\">Сделать из описания подзадачи</button>
                   </div>
                   
                   <textarea class="form-control activity-comment" 
@@ -3540,11 +3552,16 @@ function renderProgressKanban() {
       byEpic[c.skillId].items.push(c);
     });
     const groupsHtml = Object.entries(byEpic).map(([skillId, grp]) => {
-      const itemsHtml = grp.items.map(c => `
-        <div class="kanban-card" draggable="true" data-skill-id="${c.skillId}" data-idx="${c.index}">
-          <div class="title">${c.activity.name}</div>
-        </div>
-      `).join('');
+      const itemsHtml = grp.items.map(c => {
+        const prio = c.activity.priority || '';
+        const prClass = prio ? ` priority-${prio}` : '';
+        const prBadge = prio ? `<div class=\"meta\"><span class=\"priority-badge ${prio}\">${prio === 'urgent' ? 'Срочный' : prio === 'high' ? 'Высокий' : prio === 'medium' ? 'Средний' : 'Низкий'}</span></div>` : '';
+        return `
+        <div class=\"kanban-card${prClass}\" draggable=\"true\" data-skill-id=\"${c.skillId}\" data-idx=\"${c.index}\"> 
+          <div class=\"title\">${c.activity.name}</div>
+          ${prBadge}
+        </div>`;
+      }).join('');
       return `
         <div class="kanban-epic">
           <div class="kanban-epic-header">${grp.name}</div>
@@ -3668,6 +3685,8 @@ function openKanbanTaskModal(skillId, index) {
   if (comPrev) comPrev.innerHTML = activity.comment ? linkifyLinksOnly(activity.comment) : '';
   const dur = document.getElementById('kanbanTaskDuration');
   if (dur) dur.value = activity.duration || 1;
+  const prioSel = document.getElementById('kanbanTaskPriority');
+  if (prioSel) prioSel.value = activity.priority || '';
   const relatedWrap = document.getElementById('kanbanTaskRelated');
   if (relatedWrap) {
     const rel = activity.relatedSkills || [];
@@ -3684,12 +3703,23 @@ function openKanbanTaskModal(skillId, index) {
       <div class="progress-activity">
         <div class="activity-info">
           <h4 class="activity-name">${escapeHtml(activity.name || '')}</h4>
-          ${activity.description ? `<div class="activity-desc">${linkify(activity.description)}</div>` : ''}
-          ${activity.expectedResult ? `<div class="activity-expected"><strong>Ожидаемый результат:</strong> ${linkify(activity.expectedResult)}</div>` : ''}
+          ${activity.description ? `<div class=\"activity-desc\">${linkify(activity.description)}</div>` : ''}
+          ${activity.expectedResult ? `<div class=\"activity-expected\"><strong>Ожидаемый результат:</strong> ${linkify(activity.expectedResult)}</div>` : ''}
           ${(activity.relatedSkills && activity.relatedSkills.length) ? `<div class=\"activity-related\">Связанные навыки: ${activity.relatedSkills.map(id => `<span class=\"tag\" title=\"${getPlanSkillName(id)}\">${getPlanSkillName(id)}</span>`).join(' ')}</div>` : ''}
-          <div class="activity-meta"><span>Уровень ${activity.level}</span><span>~${activity.duration} нед.</span></div>
-          <div style="margin:6px 0; display:flex; gap:8px;">
-            <button class="btn btn--outline btn--sm" id="btnParseDescToSubtasks">Сделать из описания подзадачи</button>
+          <div class=\"activity-meta\">
+            <span>Уровень ${activity.level}</span>
+            <span>~${activity.duration} нед.</span>
+            ${activity.priority ? `<span class=\\\"priority-badge ${activity.priority}\\\" title=\\\"Текущий приоритет\\\">${activity.priority === 'urgent' ? 'Срочный' : activity.priority === 'high' ? 'Высокий' : activity.priority === 'medium' ? 'Средний' : 'Низкий'}</span>` : ''}
+          </div>
+          <div style=\"margin:6px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;\">
+            <button class=\"btn btn--outline btn--sm\" id=\"btnParseDescToSubtasks\">Сделать из описания подзадачи</button>
+            <select id=\"kanbanTaskPriorityView\" class=\"form-control\" style=\"max-width: 180px; height:28px; padding:2px 6px; font-size:12px;\">
+              <option value=\"\">Нет приоритета</option>
+              <option value=\"urgent\" ${activity.priority==='urgent' ? 'selected' : ''}>Срочный</option>
+              <option value=\"high\" ${activity.priority==='high' ? 'selected' : ''}>Высокий</option>
+              <option value=\"medium\" ${activity.priority==='medium' ? 'selected' : ''}>Средний</option>
+              <option value=\"low\" ${activity.priority==='low' ? 'selected' : ''}>Низкий</option>
+            </select>
           </div>
           ${Array.isArray(activity.subtasks) && activity.subtasks.length ? (() => {
             const stats = computeSubtasksStats(activity);
@@ -3855,6 +3885,20 @@ function openKanbanTaskModal(skillId, index) {
       };
       quickBtn.addEventListener('click', commit);
       quickInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+    }
+
+    // Bind priority change in view mode
+    const prioView = document.getElementById('kanbanTaskPriorityView');
+    if (prioView) {
+      prioView.addEventListener('change', () => {
+        const val = prioView.value || '';
+        activity.priority = val;
+        saveToLocalStorage();
+        try { syncProgressTaskToPlan(skillId, index); } catch (_) {}
+        renderProgress();
+        refreshKanbanModalIfCurrent(skillId, index, 'view');
+        try { autoCloudSaveDebounced('priority-change'); } catch (_) {}
+      });
     }
 
     // Bind: parse description -> subtasks
@@ -4025,6 +4069,8 @@ function saveKanbanTaskModal() {
   activity.comment = commentVal;
   const dur = parseInt(document.getElementById('kanbanTaskDuration').value) || activity.duration || 1;
   activity.duration = Math.max(1, dur);
+  const pr = document.getElementById('kanbanTaskPriority').value;
+  activity.priority = pr || '';
   saveToLocalStorage();
   // switch back to view mode and re-render view content
   try { switchKanbanTaskMode('view'); } catch (_) {}
@@ -4431,7 +4477,7 @@ function exportToCSV() {
 }
 
 function exportToXLSX() {
-  const headers = ['Навык', 'Уровень', 'Цель задачи', 'Описание', 'Длительность', 'Ожидаемый результат', 'Комментарии'];
+  const headers = ['Навык', 'Уровень', 'Цель задачи', 'Описание', 'Длительность', 'Ожидаемый результат', 'Комментарии', 'Приоритет'];
   const rows = [headers];
   const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
   Object.values(planData || {}).forEach(plan => {
@@ -4445,7 +4491,8 @@ function exportToXLSX() {
         String(activity.description || ''),
         Number(activity.duration || 0),
         String(activity.expectedResult || ''),
-        String(activity.comment || '')
+        String(activity.comment || ''),
+        String(activity.priority || '')
       ]);
     });
   });
@@ -4482,7 +4529,7 @@ function exportProgressToCSV() {
 }
 
 function exportProgressToXLSX() {
-  const headers = ['Навык', 'Текущий уровень', 'Целевой уровень', 'Задача', 'Длительность (нед.)', 'Статус', 'Описание', 'Ожидаемый результат', 'Комментарий'];
+  const headers = ['Навык', 'Текущий уровень', 'Целевой уровень', 'Задача', 'Длительность (нед.)', 'Статус', 'Описание', 'Ожидаемый результат', 'Комментарий', 'Приоритет'];
   const rows = [headers];
   const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
   Object.values(planData || {}).forEach(plan => {
@@ -4500,7 +4547,8 @@ function exportProgressToXLSX() {
         status,
         String(activity.description || ''),
         String(activity.expectedResult || ''),
-        String(activity.comment || '')
+        String(activity.comment || ''),
+        String(activity.priority || '')
       ]);
     });
   });
