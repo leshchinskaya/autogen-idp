@@ -1082,7 +1082,9 @@ function setupEventListeners() {
   
   const exportPDFBtn = document.getElementById('exportPDF');
   const exportCSVBtn = document.getElementById('exportCSV');
+  const exportXLSXBtn = document.getElementById('exportXLSX');
   const exportCSVProgressBtn = document.getElementById('exportCSVProgress');
+  const exportXLSXProgressBtn = document.getElementById('exportXLSXProgress');
   const importCSVProgressFile = document.getElementById('importCSVProgressFile');
   const cloudSyncBtn = document.getElementById('cloudSyncBtn');
   const cloudQuickSaveBtn = document.getElementById('cloudQuickSaveBtn');
@@ -1107,6 +1109,12 @@ function setupEventListeners() {
   }
   if (exportCSVProgressBtn) {
     exportCSVProgressBtn.addEventListener('click', exportProgressToCSV);
+  }
+  if (exportXLSXProgressBtn) {
+    exportXLSXProgressBtn.addEventListener('click', exportProgressToXLSX);
+  }
+  if (exportXLSXBtn) {
+    exportXLSXBtn.addEventListener('click', exportToXLSX);
   }
   if (importCSVProgressFile) {
     importCSVProgressFile.addEventListener('change', handleImportProgressCSV);
@@ -4373,6 +4381,35 @@ function exportToCSV() {
   link.click();
 }
 
+function exportToXLSX() {
+  const headers = ['Навык', 'Уровень', 'Цель задачи', 'Описание', 'Длительность', 'Ожидаемый результат', 'Комментарии'];
+  const rows = [headers];
+  const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
+  Object.values(planData || {}).forEach(plan => {
+    const skillName = plan.name || '';
+    const level = `${plan.currentLevel || 0} → ${plan.targetLevel || 0}`;
+    (plan.activities || []).forEach(activity => {
+      rows.push([
+        skillName,
+        level,
+        String(activity.name || ''),
+        String(activity.description || ''),
+        Number(activity.duration || 0),
+        String(activity.expectedResult || ''),
+        String(activity.comment || '')
+      ]);
+    });
+  });
+  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const tableHtml = rows.map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><table>${tableHtml}</table></body></html>`;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `IPR_${appState.profile.fullName || 'export'}.xlsx`;
+  link.click();
+}
+
 function exportProgressToCSV() {
   let csvContent = 'Skill,Current Level,Target Level,Task,Duration (weeks),Completed,Comment,Description,Expected Result,Status,RelatedSkills,SkillWeights\n';
   const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
@@ -4395,6 +4432,38 @@ function exportProgressToCSV() {
   link.click();
 }
 
+function exportProgressToXLSX() {
+  const headers = ['Навык', 'Текущий уровень', 'Целевой уровень', 'Задача', 'Длительность (нед.)', 'Статус', 'Описание', 'Ожидаемый результат', 'Комментарий'];
+  const rows = [headers];
+  const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
+  Object.values(planData || {}).forEach(plan => {
+    const skillName = plan.name || '';
+    const current = plan.currentLevel ?? '';
+    const target = plan.targetLevel ?? '';
+    (plan.activities || []).forEach(activity => {
+      const status = activity.status || (activity.completed ? 'done' : 'planned');
+      rows.push([
+        skillName,
+        current,
+        target,
+        String(activity.name || ''),
+        Number(activity.duration || 0),
+        status,
+        String(activity.description || ''),
+        String(activity.expectedResult || ''),
+        String(activity.comment || '')
+      ]);
+    });
+  });
+  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const tableHtml = rows.map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><table>${tableHtml}</table></body></html>`;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `IPR_Progress_${appState.profile.fullName || 'export'}.xlsx`;
+  link.click();
+}
 function handleImportProgressCSV(ev) {
   const file = ev.target.files?.[0];
   if (!file) return;
@@ -4452,7 +4521,15 @@ function handleImportProgressCSV(ev) {
             completedActivities: 0,
             overallProgress: 0,
             totalDuration: 0
-          };
+  };
+  // Используем упрощённый HTML→Excel путь (Excel корректно откроет как XLSX)
+  const tableHtml = rows.map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><table>${tableHtml}</table></body></html>`;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `IPR_${appState.profile.fullName || 'export'}.xlsx`;
+  link.click();
         }
         newProgress[skillId].activities.push({
           id: `${skillId}_${newProgress[skillId].activities.length}`,
