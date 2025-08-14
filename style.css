@@ -1544,6 +1544,8 @@ select.form-control {
 .priority-badge.high   { background: rgba(245, 158, 11, 0.1); border-color:#f59e0b; color:#b45309; }
 .priority-badge.medium { background: rgba(59, 130, 246, 0.1); border-color:#3b82f6; color:#1d4ed8; }
 .priority-badge.low    { background: rgba(15, 23, 42, 0.05); color: var(--color-text-secondary); }
+/* Muted priority for done/cancelled */
+.priority-badge.muted  { background: rgba(var(--color-info-rgb), 0.08); border-color: var(--color-border); color: var(--color-text-secondary); }
 
 .kanban-epic { margin-bottom: var(--space-12); }
 .kanban-epic-header {
@@ -1561,6 +1563,21 @@ select.form-control {
   border-color: var(--color-primary);
   box-shadow: var(--shadow-sm);
 }
+
+/* Completed/cancelled cards: no colored priority frame and strike title */
+.kanban-card--completed .title { text-decoration: line-through; color: var(--color-text-secondary); }
+.kanban-card--completed:hover { border-color: var(--color-border); box-shadow: none; }
+.kanban-card--completed .priority-badge { background: rgba(var(--color-info-rgb), 0.08); border-color: var(--color-border); color: var(--color-text-secondary); }
+
+/* Collapse fully completed items in Progress/List */
+.progress-activity.activity-collapsed .activity-desc,
+.progress-activity.activity-collapsed .activity-expected,
+.progress-activity.activity-collapsed .activity-related,
+.progress-activity.activity-collapsed .activity-meta,
+.progress-activity.activity-collapsed .activity-actions,
+.progress-activity.activity-collapsed .subtasks-list,
+.progress-activity.activity-collapsed .activity-comment,
+.progress-activity.activity-collapsed .activity-comment-preview { display: none; }
 
 @media (max-width: 900px) {
   .kanban-board { grid-template-columns: 1fr; }
@@ -1668,8 +1685,8 @@ html {
 
 /* KB task cards style to mirror Progress/List aesthetics */
 .kb-task { background: var(--color-surface); }
-.kb-task-header { }
-.kb-task-body { }
+.kb-task-header { display:flex; align-items:flex-start; }
+.kb-task-body { display:block; }
 .kb-task .tag { font-size: var(--font-size-xs); }
 .kb-task .tag.tag--skill {
   background-color: #DCFCE7; /* green-100 */
