@@ -189,10 +189,15 @@
                                   Автопривязка навыка
                                 </label>
                                 
-                                <div style="flex:1; display:flex; justify-content:flex-end;">
-                                  <button class="btn btn--primary" id="skillsKbAddSelectedBtn">Добавить выбранные задачи</button>
-                                </div>
+                                  <div style="flex:1; display:flex; justify-content:flex-end; gap:8px;">
+                                    <button class="btn btn--outline" id="skillsKbWeakFilterOpenBtn" type="button">Вставить слабые навыки</button>
+                                    <button class="btn btn--primary" id="skillsKbAddSelectedBtn">Добавить выбранные задачи</button>
+                                  </div>
                               </div>
+                                <div id="skillsKbWeakFilterInfo" style="display:none; margin-top:4px; color:var(--color-text-secondary); font-size:12px;">
+                                  Фильтр слабых навыков активен (<span id="skillsKbWeakFilterCount">0</span>). 
+                                  <button class="btn btn--xs btn--outline" id="skillsKbWeakFilterClearBtn" type="button">Очистить</button>
+                                </div>
                             </div>
                             <div id="skillsKbFilesWrap" style="display:none; margin-top:12px;">
                               <div id="skillsKbFilesList" style="margin-top:8px; display:grid; gap:8px;"></div>
@@ -449,6 +454,26 @@ Firebase	2"></textarea>
         </div>
         <div class="modal__footer">
           <button class="btn btn--primary" id="bulkSelectConfirmBtn">Выбрать навыки</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- KB Weak Skills Filter Modal -->
+    <div id="kbWeakSkillsModal" class="modal" aria-hidden="true" style="display:none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="kbWeakSkillsModalTitle">
+        <div class="modal__header">
+          <h3 id="kbWeakSkillsModalTitle">Слабые навыки для фильтра БЗ задач</h3>
+          <button class="btn btn--outline btn--sm" id="closeKbWeakSkillsModal">Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <p style="margin-bottom:8px;color:var(--color-text-secondary);font-size:12px;">Вставьте список: по одному навыку на строку, опционально с уровнем через таб/пробел. Будут показаны только задачи этих навыков с уровнем ≥ текущий+1.</p>
+          <textarea id="kbWeakSkillsText" class="form-control" style="min-height: 240px; resize: vertical;" placeholder="Тестирование безопасности	1
+Тестирование локализации	2
+Firebase	2"></textarea>
+        </div>
+        <div class="modal__footer">
+          <button class="btn btn--primary" id="kbWeakSkillsConfirmBtn">Применить фильтр</button>
         </div>
       </div>
     </div>

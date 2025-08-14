@@ -439,6 +439,9 @@ async function renderSkillsKbPicker() {
   const filterSkillSelect = document.getElementById('skillsKbFilterSkillSelect');
   const filterLevelSelect = document.getElementById('skillsKbFilterLevelSelect');
   const autoBindChk = document.getElementById('skillsKbAutoBind');
+  const weakInfo = document.getElementById('skillsKbWeakFilterInfo');
+  const weakCount = document.getElementById('skillsKbWeakFilterCount');
+  const weakClearBtn = document.getElementById('skillsKbWeakFilterClearBtn');
   if (!filesList || !parsedTasks || !targetSelect) return;
 
   // Fill skills select with full catalog
@@ -577,11 +580,28 @@ async function renderSkillsKbPicker() {
     const q = (searchInput?.value || '').trim().toLowerCase();
     const filterSkill = (filterSkillSelect?.value || '').trim().toLowerCase();
     const filterLevel = parseInt(filterLevelSelect?.value || '') || null;
+    // Build weak filter maps
+    const weakEnabled = Array.isArray(appState.kbWeakFilter?.skills) && appState.kbWeakFilter.skills.length > 0;
+    const weakNameSet = new Set((appState.kbWeakFilter?.skills || []).map(s => String(s.name || '').trim().toLowerCase()).filter(Boolean));
+    const weakLevelMap = new Map((appState.kbWeakFilter?.skills || []).map(s => [String(s.name || '').trim().toLowerCase(), Number.isFinite(s.current) ? s.current : 0]));
     const filtered = all.filter(t => {
       const matchesText = !q || t.title.toLowerCase().includes(q) || (t.description||'').toLowerCase().includes(q);
       const matchesSkill = !filterSkill || (t.skillName && t.skillName.toLowerCase() === filterSkill);
       const matchesLevel = !filterLevel || (parseInt(t.level || 0) === filterLevel);
-      return matchesText && matchesSkill && matchesLevel;
+      // Weak skills filter: show only tasks whose KB skill is in pasted list AND task level >= current+1
+      let matchesWeak = true;
+      if (weakEnabled) {
+        const kbSkillName = String(t.skillName || '').trim().toLowerCase();
+        if (!kbSkillName || !weakNameSet.has(kbSkillName)) {
+          matchesWeak = false;
+        } else {
+          const curLvl = weakLevelMap.get(kbSkillName) ?? 0;
+          const minLvl = Math.max(1, curLvl + 1);
+          const taskLvl = Number.parseInt(t.level || 0) || 0;
+          matchesWeak = taskLvl >= minLvl;
+        }
+      }
+      return matchesText && matchesSkill && matchesLevel && matchesWeak;
     });
     parsedTasks.innerHTML = filtered.length ? `
       <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; margin-top:8px;">
@@ -633,12 +653,19 @@ async function renderSkillsKbPicker() {
     });
     // stash
     skillsKbState.tasks = filtered;
+    // Update weak filter indicator
+    if (weakInfo && weakCount) {
+      const enabled = weakEnabled;
+      weakInfo.style.display = enabled ? 'block' : 'none';
+      if (enabled) weakCount.textContent = String((appState.kbWeakFilter?.skills || []).length);
+    }
   };
 
   filesList.querySelectorAll('.skills-kb-file-chk').forEach(cb => cb.addEventListener('change', parseAndRender));
   if (searchInput) searchInput.oninput = () => { clearTimeout(window.__kbDeb2); window.__kbDeb2 = setTimeout(parseAndRender, 200); };
   if (filterSkillSelect) filterSkillSelect.onchange = () => parseAndRender();
   if (filterLevelSelect) filterLevelSelect.onchange = () => parseAndRender();
+  if (weakClearBtn) weakClearBtn.onclick = () => { appState.kbWeakFilter = { skills: [] }; saveToLocalStorage(); parseAndRender(); };
   const addBtn = document.getElementById('skillsKbAddSelectedBtn');
   if (addBtn) addBtn.onclick = () => addSelectedSkillsKbTasks();
   const deselectBtn = document.getElementById('skillsKbDeselectAllBtn');
@@ -1011,6 +1038,7 @@ function setupEventListeners() {
   const openKbPickerBtn = document.getElementById('openKbPickerBtn');
   const appendToPlanBtn = document.getElementById('appendToPlan');
   const bulkSelectBtn = document.getElementById('bulkSelectBtn');
+  const kbWeakOpenBtn = document.getElementById('skillsKbWeakFilterOpenBtn');
   const deselectAllBtn = document.getElementById('deselectAllBtn');
   const skillsTabManualBtn = document.getElementById('skillsTabManualBtn');
   const skillsTabKBBtn = document.getElementById('skillsTabKBBtn');
@@ -1025,6 +1053,9 @@ function setupEventListeners() {
   }
   if (bulkSelectBtn) {
     bulkSelectBtn.addEventListener('click', () => toggleBulkSelectModal(true));
+  }
+  if (kbWeakOpenBtn) {
+    kbWeakOpenBtn.addEventListener('click', () => toggleKbWeakSkillsModal(true));
   }
   if (deselectAllBtn) {
     deselectAllBtn.addEventListener('click', () => {
@@ -1363,6 +1394,9 @@ function setupEventListeners() {
   const bulkSelectModal = document.getElementById('bulkSelectModal');
   const closeBulkSelectModalBtn = document.getElementById('closeBulkSelectModal');
   const bulkSelectConfirmBtn = document.getElementById('bulkSelectConfirmBtn');
+  const kbWeakSkillsModal = document.getElementById('kbWeakSkillsModal');
+  const closeKbWeakSkillsModalBtn = document.getElementById('closeKbWeakSkillsModal');
+  const kbWeakSkillsConfirmBtn = document.getElementById('kbWeakSkillsConfirmBtn');
   if (infoModal && closeInfoModalBtn) {
     closeInfoModalBtn.addEventListener('click', () => toggleInfoModal(false));
     infoModal.addEventListener('click', (e) => {
@@ -1375,6 +1409,13 @@ function setupEventListeners() {
       if (e.target && e.target.hasAttribute('data-close-modal')) toggleBulkSelectModal(false);
     });
     bulkSelectConfirmBtn.addEventListener('click', handleBulkSelectSkills);
+  }
+  if (kbWeakSkillsModal && closeKbWeakSkillsModalBtn && kbWeakSkillsConfirmBtn) {
+    closeKbWeakSkillsModalBtn.addEventListener('click', () => toggleKbWeakSkillsModal(false));
+    kbWeakSkillsModal.addEventListener('click', (e) => {
+      if (e.target && e.target.hasAttribute('data-close-modal')) toggleKbWeakSkillsModal(false);
+    });
+    kbWeakSkillsConfirmBtn.addEventListener('click', handleKbWeakSkillsFilter);
   }
 
   // Quick load modal controls
@@ -2380,6 +2421,13 @@ function toggleInfoModal(open) {
   modal.setAttribute('aria-hidden', open ? 'false' : 'true');
 }
 
+function toggleKbWeakSkillsModal(open) {
+  const modal = document.getElementById('kbWeakSkillsModal');
+  if (!modal) return;
+  modal.style.display = open ? 'block' : 'none';
+  modal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
 function toggleBulkSelectModal(open) {
   const modal = document.getElementById('bulkSelectModal');
   if (!modal) return;
@@ -2420,6 +2468,37 @@ function handleBulkSelectSkills() {
   saveToLocalStorage();
   renderSkills();
   toggleBulkSelectModal(false);
+}
+
+function handleKbWeakSkillsFilter() {
+  const ta = document.getElementById('kbWeakSkillsText');
+  if (!ta) return;
+  const lines = String(ta.value || '')
+    .split(/\r?\n/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (lines.length === 0) { toggleKbWeakSkillsModal(false); return; }
+  // Build name -> current mapping
+  const nameToId = new Map();
+  Object.values(skillsData.skills || {}).forEach(arr => (arr || []).forEach(s => nameToId.set(String(s.name).toLowerCase(), s.id)));
+  const weak = [];
+  lines.forEach(raw => {
+    let name = raw;
+    let curLevel = 0;
+    const m = raw.match(/^(.*?)[\t\s]+(\d+)$/);
+    if (m) {
+      name = m[1].trim();
+      curLevel = Math.max(0, Math.min(4, parseInt(m[2], 10) || 0));
+    }
+    const norm = String(name).trim();
+    if (!norm) return;
+    // keep even if not found in catalog; filter by KB will use names
+    weak.push({ name: norm, current: curLevel });
+  });
+  appState.kbWeakFilter = { skills: weak };
+  saveToLocalStorage();
+  try { renderSkillsKbPicker(); } catch (_) {}
+  toggleKbWeakSkillsModal(false);
 }
 
 function toggleQuickLoadModal(open) {
