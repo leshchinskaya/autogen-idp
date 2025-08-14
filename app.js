@@ -3413,7 +3413,26 @@ function renderProgressTracking() {
       return a.idx - b.idx;
     });
 
-  progressTracking.innerHTML = ordered.map(({ skillId, skill }) => {
+  const hideDoneInList = !!(appState.ui && appState.ui.hideDoneInList);
+  const controlsHtml = `
+    <div class="progress-list-controls" style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+      <label class="checkbox" style="gap:8px; cursor:pointer;">
+        <input type="checkbox" id="hideDoneTasksCheckbox" ${hideDoneInList ? 'checked' : ''} />
+        <span>Не отображать сделанные</span>
+      </label>
+    </div>
+  `;
+
+  // optionally hide fully completed skills
+  const filteredOrdered = hideDoneInList
+    ? ordered.filter(({ skillId, skill }) => {
+        const relatedOnly = isRelatedOnlySkill(skillId);
+        const isAllDone = relatedOnly || (skill.activities.length > 0 && skill.activities.every(a => (getActivityCompletionRatio(a) >= 1)));
+        return !isAllDone;
+      })
+    : ordered;
+
+  progressTracking.innerHTML = controlsHtml + filteredOrdered.map(({ skillId, skill }) => {
     const relatedOnly = isRelatedOnlySkill(skillId);
     // В процентах показываем взвешенный прогресс по задачам (учёт подзадач через recomputeAllProgress)
     const progressPercentage = relatedOnly ? 100 : Math.round(skill.overallProgress || 0);
@@ -3435,9 +3454,12 @@ function renderProgressTracking() {
         </div>
         ${(!relatedOnly && !collapsed) ? `
         <div class="progress-activities">
-          ${skill.activities.map((activity, index) => `
-            <div class="progress-activity ${activity.completed ? 'activity-completed' : ''}">
-              ${activity.priority ? `<span class="priority-badge ${activity.priority} priority-badge-corner">${activity.priority === 'urgent' ? 'Срочный' : activity.priority === 'high' ? 'Высокий' : activity.priority === 'medium' ? 'Средний' : 'Низкий'}</span>` : ''}
+          ${skill.activities
+            .map((a, i) => ({ a, i }))
+            .filter(({ a }) => !hideDoneInList || !((getActivityCompletionRatio(a) >= 1) || a.status === 'done' || a.status === 'cancelled'))
+            .map(({ a: activity, i: index }) => `
+            <div class="progress-activity ${(getActivityCompletionRatio(activity) >= 1 || activity.status === 'done' || activity.status === 'cancelled') ? 'activity-completed activity-collapsed' : ''}">
+              ${activity.priority ? `<span class="priority-badge ${activity.priority} ${(getActivityCompletionRatio(activity) >= 1 || activity.status === 'done' || activity.status === 'cancelled') ? 'muted' : ''} priority-badge-corner">${activity.priority === 'urgent' ? 'Срочный' : activity.priority === 'high' ? 'Высокий' : activity.priority === 'medium' ? 'Средний' : 'Низкий'}</span>` : ''}
               <div class="activity-checkbox-container">
                 <input type="checkbox" class="activity-checkbox" 
                        ${activity.completed ? 'checked' : ''}
@@ -3451,17 +3473,17 @@ function renderProgressTracking() {
                     <span>Уровень ${activity.level}</span>
                     <span>~${activity.duration} нед.</span>
                   </div>
-                  ${Array.isArray(activity.subtasks) && activity.subtasks.length ? (() => {
+                   ${Array.isArray(activity.subtasks) && activity.subtasks.length ? (() => {
                     const stats = computeSubtasksStats(activity);
                     const pct = Math.round((stats.done / Math.max(1, stats.total)) * 100);
                     return `
-                      <div class=\"activity-meta\" style=\"margin-top:6px; display:flex; gap:8px; align-items:center;\">
+                       <div class=\"activity-meta\" style=\"margin-top:6px; display:flex; gap:8px; align-items:center;\">
                         <span>Подзадачи: ${stats.done}/${stats.total}</span>
                         <div class=\"skill-progress-bar\" style=\"flex:1; height:6px;\">
                           <div class=\"skill-progress-fill\" style=\"width:${pct}%\"></div>
                         </div>
                       </div>
-                      <div style=\"margin-top:8px; display:grid; gap:6px;\">
+                       <div class=\"subtasks-list\" style=\"margin-top:8px; display:grid; gap:6px;\">
                         ${activity.subtasks.map((s, i) => `
                           <label class=\"checkbox\" style=\"align-items:center; gap:8px;\">
                             <input type=\"checkbox\" ${s.done ? 'checked' : ''} onchange=\"toggleSubtask('${skillId}', ${index}, ${i})\" />
@@ -3471,7 +3493,7 @@ function renderProgressTracking() {
                       </div>
                     `;
                   })() : ''}
-             <div style=\"margin:6px 0 0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;\">
+              <div class=\"activity-actions\" style=\"margin:6px 0 0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;\">
                     <button class=\"btn btn--outline btn--sm\" onclick=\"openTaskEdit('${skillId}', ${index})\">Редактировать</button>
                     <button class=\"btn btn--outline btn--sm\" style=\"margin-left:6px;\" onclick=\"progressParseDescToSubtasks('${skillId}', ${index})\">Сделать из описания подзадачи</button>
                   </div>
@@ -3501,6 +3523,17 @@ function renderProgressTracking() {
       renderProgressTracking();
     });
   });
+
+  // обработчик чекбокса "Не отображать сделанные"
+  const hideCb = progressTracking.querySelector('#hideDoneTasksCheckbox');
+  if (hideCb) {
+    hideCb.addEventListener('change', () => {
+      if (!appState.ui) appState.ui = {};
+      appState.ui.hideDoneInList = !!hideCb.checked;
+      try { saveToLocalStorage(); } catch (_) {}
+      renderProgressTracking();
+    });
+  }
 
   // снято редактирование связанных навыков в режиме списка
 }
@@ -3554,10 +3587,11 @@ function renderProgressKanban() {
     const groupsHtml = Object.entries(byEpic).map(([skillId, grp]) => {
       const itemsHtml = grp.items.map(c => {
         const prio = c.activity.priority || '';
-        const prClass = prio ? ` priority-${prio}` : '';
-        const prBadge = prio ? `<div class=\"meta\"><span class=\"priority-badge ${prio}\">${prio === 'urgent' ? 'Срочный' : prio === 'high' ? 'Высокий' : prio === 'medium' ? 'Средний' : 'Низкий'}</span></div>` : '';
+        const isCompleted = (c.activity.status === 'done' || c.activity.status === 'cancelled');
+        const prClass = (!isCompleted && prio) ? ` priority-${prio}` : '';
+        const prBadge = prio ? `<div class=\"meta\"><span class=\"priority-badge ${prio}${isCompleted ? ' muted' : ''}\">${prio === 'urgent' ? 'Срочный' : prio === 'high' ? 'Высокий' : prio === 'medium' ? 'Средний' : 'Низкий'}</span></div>` : '';
         return `
-        <div class=\"kanban-card${prClass}\" draggable=\"true\" data-skill-id=\"${c.skillId}\" data-idx=\"${c.index}\"> 
+        <div class=\"kanban-card${prClass}${isCompleted ? ' kanban-card--completed' : ''}\" draggable=\"true\" data-skill-id=\"${c.skillId}\" data-idx=\"${c.index}\"> 
           <div class=\"title\">${c.activity.name}</div>
           ${prBadge}
         </div>`;
