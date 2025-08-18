@@ -3144,7 +3144,11 @@ function syncProgressTaskToPlan(skillId, activityIndex) {
 function renderProgress() {
   // Гарантируем пересчёт агрегатов с учётом связанных навыков
   recomputeAllProgress();
-  initSortSettings();
+  // Инициализируем настройки сортировки только один раз
+  if (!window.sortSettingsInitialized) {
+    initSortSettings();
+    window.sortSettingsInitialized = true;
+  }
   if (typeof Chart !== 'undefined') {
     renderProgressCharts();
   }
@@ -3157,21 +3161,45 @@ function renderProgress() {
 
 // Инициализация настроек сортировки
 function initSortSettings() {
+  initSortSettingsModal();
+  initSortSettingsButton();
+}
+
+// Инициализация модального окна настроек сортировки
+function initSortSettingsModal() {
+  const modal = document.getElementById('sortSettingsModal');
   const sortBySelect = document.getElementById('taskSortBy');
   const sortDirectionSelect = document.getElementById('taskSortDirection');
   const crossSkillsCheckbox = document.getElementById('taskSortCrossSkills');
+  const applyBtn = document.getElementById('applySortSettings');
+  const closeButtons = modal.querySelectorAll('[data-close-modal]');
   
-  if (!sortBySelect || !sortDirectionSelect || !crossSkillsCheckbox) return;
+  if (!modal || !sortBySelect || !sortDirectionSelect || !crossSkillsCheckbox || !applyBtn) return;
   
-  // Загружаем текущие настройки
-  const settings = appState.sortSettings || { by: 'priority', direction: 'desc', crossSkills: true };
+  // Убеждаемся, что модальное окно закрыто при инициализации
+  modal.style.display = 'none';
+  modal.setAttribute('aria-hidden', 'true');
   
-  sortBySelect.value = settings.by;
-  sortDirectionSelect.value = settings.direction;
-  crossSkillsCheckbox.checked = settings.crossSkills;
+  // Закрытие модального окна
+  const closeModal = () => {
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  };
   
-  // Обработчики изменений
-  const updateSettings = () => {
+  // Открытие модального окна
+  const openModal = () => {
+    // Загружаем текущие настройки в форму
+    const settings = appState.sortSettings || { by: 'priority', direction: 'desc', crossSkills: true };
+    sortBySelect.value = settings.by;
+    sortDirectionSelect.value = settings.direction;
+    crossSkillsCheckbox.checked = settings.crossSkills;
+    
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+  };
+  
+  // Применение настроек
+  const applySettings = () => {
     appState.sortSettings = {
       by: sortBySelect.value,
       direction: sortDirectionSelect.value,
@@ -3180,12 +3208,46 @@ function initSortSettings() {
     saveToLocalStorage();
     renderProgressTracking();
     renderProgressKanban();
+    closeModal();
   };
   
-  // Удаляем предыдущие обработчики (если есть)
-  sortBySelect.onchange = updateSettings;
-  sortDirectionSelect.onchange = updateSettings;
-  crossSkillsCheckbox.onchange = updateSettings;
+  // Обработчики событий
+  applyBtn.onclick = applySettings;
+  closeButtons.forEach(btn => btn.onclick = closeModal);
+  
+  // Закрытие по клику на overlay
+  const overlay = modal.querySelector('.modal__overlay');
+  if (overlay) {
+    overlay.onclick = closeModal;
+  }
+  
+  // Закрытие по Escape (только для этого конкретного модального окна)
+  const handleEscape = (e) => {
+    if (e.key === 'Escape' && modal.style.display === 'block') {
+      closeModal();
+    }
+  };
+  
+  // Добавляем обработчик, только если его еще нет
+  if (!modal.dataset.escapeHandlerAdded) {
+    document.addEventListener('keydown', handleEscape);
+    modal.dataset.escapeHandlerAdded = 'true';
+  }
+  
+  // Сохраняем функцию открытия для использования кнопкой
+  window.openSortSettingsModal = openModal;
+}
+
+// Инициализация кнопки настроек сортировки
+function initSortSettingsButton() {
+  const sortBtn = document.getElementById('sortSettingsBtn');
+  if (!sortBtn) return;
+  
+  sortBtn.onclick = () => {
+    if (window.openSortSettingsModal) {
+      window.openSortSettingsModal();
+    }
+  };
 }
 
 // Отдельный блок: агрегированный список связанных навыков, не влияющий на графики
