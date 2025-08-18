@@ -309,6 +309,40 @@
                         </div>
                         <input type="file" id="importCSVProgressFile" accept=".csv" style="display:none;" />
 
+                        <!-- Настройки сортировки -->
+                        <div class="card" style="margin-top: 12px;">
+                            <div class="card__header">
+                                <h3>⚙️ Настройки сортировки задач</h3>
+                            </div>
+                            <div class="card__body" style="padding: 12px;">
+                                <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label class="form-label" style="margin: 0; font-weight: 500;">Сортировать по:</label>
+                                        <select id="taskSortBy" class="form-control" style="width: auto; min-width: 140px;">
+                                            <option value="priority">Приоритету</option>
+                                            <option value="name">Названию</option>
+                                            <option value="level">Уровню</option>
+                                            <option value="duration">Длительности</option>
+                                            <option value="none">Без сортировки</option>
+                                        </select>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label class="form-label" style="margin: 0; font-weight: 500;">Направление:</label>
+                                        <select id="taskSortDirection" class="form-control" style="width: auto; min-width: 120px;">
+                                            <option value="desc">По убыванию</option>
+                                            <option value="asc">По возрастанию</option>
+                                        </select>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label class="checkbox" style="gap: 6px; cursor: pointer; margin: 0;">
+                                            <input type="checkbox" id="taskSortCrossSkills" checked>
+                                            <span>Сквозная сортировка через все навыки</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div id="progressPanelBoard" class="tab-panel active">
                           <div class="card">
                               <div class="card__header">

@@ -782,7 +782,12 @@ let appState = {
   selectedSkills: {},
   developmentPlan: {},
   progress: {},
-  ui: {}
+  ui: {},
+  sortSettings: {
+    by: 'priority',
+    direction: 'desc',
+    crossSkills: true
+  }
 };
 
 function updateSelectedCounter() {
@@ -3139,6 +3144,7 @@ function syncProgressTaskToPlan(skillId, activityIndex) {
 function renderProgress() {
   // Гарантируем пересчёт агрегатов с учётом связанных навыков
   recomputeAllProgress();
+  initSortSettings();
   if (typeof Chart !== 'undefined') {
     renderProgressCharts();
   }
@@ -3147,6 +3153,39 @@ function renderProgress() {
   renderProgressKanban();
   // Затем блок со связанными навыками (как отдельный список вне графиков)
   renderRelatedSkillsSummary();
+}
+
+// Инициализация настроек сортировки
+function initSortSettings() {
+  const sortBySelect = document.getElementById('taskSortBy');
+  const sortDirectionSelect = document.getElementById('taskSortDirection');
+  const crossSkillsCheckbox = document.getElementById('taskSortCrossSkills');
+  
+  if (!sortBySelect || !sortDirectionSelect || !crossSkillsCheckbox) return;
+  
+  // Загружаем текущие настройки
+  const settings = appState.sortSettings || { by: 'priority', direction: 'desc', crossSkills: true };
+  
+  sortBySelect.value = settings.by;
+  sortDirectionSelect.value = settings.direction;
+  crossSkillsCheckbox.checked = settings.crossSkills;
+  
+  // Обработчики изменений
+  const updateSettings = () => {
+    appState.sortSettings = {
+      by: sortBySelect.value,
+      direction: sortDirectionSelect.value,
+      crossSkills: crossSkillsCheckbox.checked
+    };
+    saveToLocalStorage();
+    renderProgressTracking();
+    renderProgressKanban();
+  };
+  
+  // Удаляем предыдущие обработчики (если есть)
+  sortBySelect.onchange = updateSettings;
+  sortDirectionSelect.onchange = updateSettings;
+  crossSkillsCheckbox.onchange = updateSettings;
 }
 
 // Отдельный блок: агрегированный список связанных навыков, не влияющий на графики
@@ -3511,18 +3550,76 @@ function renderProgressTracking() {
       })
     : ordered;
 
-  progressTracking.innerHTML = controlsHtml + filteredOrdered.map(({ skillId, skill }) => {
+  // Собираем все задачи из всех навыков
+  const allActivities = [];
+  filteredOrdered.forEach(({ skillId, skill }) => {
     const relatedOnly = isRelatedOnlySkill(skillId);
-    // В процентах показываем взвешенный прогресс по задачам (учёт подзадач через recomputeAllProgress)
-    const progressPercentage = relatedOnly ? 100 : Math.round(skill.overallProgress || 0);
-    // Для бейджа "всё сделано" используем строгую проверку: все активности либо done/cancelled
-    const allDone = relatedOnly || (skill.activities.length > 0 && skill.activities.every(a => (getActivityCompletionRatio(a) >= 1)));
+    if (!relatedOnly) {
+      skill.activities.forEach((activity, index) => {
+        if (!hideDoneInList || !((getActivityCompletionRatio(activity) >= 1) || activity.status === 'done' || activity.status === 'cancelled')) {
+          allActivities.push({
+            skillId,
+            skillName: skill.name,
+            activity,
+            originalIndex: index
+          });
+        }
+      });
+    }
+  });
+
+  // Сортируем все задачи согласно настройкам
+  const settings = appState.sortSettings || { by: 'priority', direction: 'desc', crossSkills: true };
+  
+  if (settings.crossSkills) {
+    // Сквозная сортировка всех задач
+    sortTasks(allActivities);
+  }
+
+  // Группируем отсортированные задачи обратно по навыкам
+  const groupedBySkill = {};
+  
+  if (settings.crossSkills) {
+    // При сквозной сортировке сохраняем общий порядок
+    allActivities.forEach(item => {
+      if (!groupedBySkill[item.skillId]) {
+        groupedBySkill[item.skillId] = {
+          skillName: item.skillName,
+          activities: []
+        };
+      }
+      groupedBySkill[item.skillId].activities.push(item);
+    });
+  } else {
+    // При сортировке внутри навыков сначала группируем, потом сортируем
+    allActivities.forEach(item => {
+      if (!groupedBySkill[item.skillId]) {
+        groupedBySkill[item.skillId] = {
+          skillName: item.skillName,
+          activities: []
+        };
+      }
+      groupedBySkill[item.skillId].activities.push(item);
+    });
+    // Сортируем внутри каждой группы
+    Object.keys(groupedBySkill).forEach(skillId => {
+      groupedBySkill[skillId].activities = sortTasks(groupedBySkill[skillId].activities);
+    });
+  }
+
+  // Генерируем HTML для отсортированных задач
+  const sortedSkillsHtml = Object.entries(groupedBySkill).map(([skillId, data]) => {
+    const skill = filteredOrdered.find(s => s.skillId === skillId)?.skill;
+    if (!skill) return '';
+
+    const progressPercentage = Math.round(skill.overallProgress || 0);
+    const allDone = skill.activities.length > 0 && skill.activities.every(a => (getActivityCompletionRatio(a) >= 1));
     const collapsed = !!(appState.ui && appState.ui.collapsedSkills && appState.ui.collapsedSkills[skillId]);
     
     return `
       <div class="progress-skill ${allDone ? 'bg-success' : 'progress-skill--remaining'}" data-skill-id="${skillId}">
         <div class="progress-skill-header">
-          <h3 class="progress-skill-title">${skill.name}</h3>
+          <h3 class="progress-skill-title">${data.skillName}</h3>
           <div style="display:flex; align-items:center; gap:8px;">
             <button type="button" class="btn btn--outline btn--sm progress-skill-toggle" data-skill-id="${skillId}" title="${collapsed ? 'Развернуть' : 'Свернуть'}">${collapsed ? '▸' : '▾'}</button>
           <span class="text-primary font-bold">${Math.round(progressPercentage)}%</span>
@@ -3531,12 +3628,9 @@ function renderProgressTracking() {
         <div class="skill-progress-bar">
           <div class="skill-progress-fill" style="width: ${progressPercentage}%"></div>
         </div>
-        ${(!relatedOnly && !collapsed) ? `
+        ${!collapsed ? `
         <div class="progress-activities">
-          ${skill.activities
-            .map((a, i) => ({ a, i }))
-            .filter(({ a }) => !hideDoneInList || !((getActivityCompletionRatio(a) >= 1) || a.status === 'done' || a.status === 'cancelled'))
-            .map(({ a: activity, i: index }) => `
+          ${data.activities.map(({ activity, originalIndex: index }) => `
             <div class="progress-activity ${(getActivityCompletionRatio(activity) >= 1 || activity.status === 'done' || activity.status === 'cancelled') ? 'activity-completed activity-collapsed' : ''}">
               ${activity.priority ? `<span class="priority-badge ${activity.priority} ${(getActivityCompletionRatio(activity) >= 1 || activity.status === 'done' || activity.status === 'cancelled') ? 'muted' : ''} priority-badge-corner">${activity.priority === 'urgent' ? 'Срочный' : activity.priority === 'high' ? 'Высокий' : activity.priority === 'medium' ? 'Средний' : 'Низкий'}</span>` : ''}
               <div class="activity-checkbox-container">
@@ -3590,6 +3684,31 @@ function renderProgressTracking() {
         </div>
     `;
   }).join('');
+
+  // Добавляем навыки без задач (related-only навыки)
+  const relatedOnlySkillsHtml = filteredOrdered
+    .filter(({ skillId }) => isRelatedOnlySkill(skillId))
+    .map(({ skillId, skill }) => {
+      const progressPercentage = 100;
+      const collapsed = !!(appState.ui && appState.ui.collapsedSkills && appState.ui.collapsedSkills[skillId]);
+      
+      return `
+        <div class="progress-skill bg-success" data-skill-id="${skillId}">
+          <div class="progress-skill-header">
+            <h3 class="progress-skill-title">${skill.name}</h3>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button type="button" class="btn btn--outline btn--sm progress-skill-toggle" data-skill-id="${skillId}" title="${collapsed ? 'Развернуть' : 'Свернуть'}">${collapsed ? '▸' : '▾'}</button>
+            <span class="text-primary font-bold">${Math.round(progressPercentage)}%</span>
+            </div>
+          </div>
+          <div class="skill-progress-bar">
+            <div class="skill-progress-fill" style="width: ${progressPercentage}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  progressTracking.innerHTML = controlsHtml + sortedSkillsHtml + relatedOnlySkillsHtml;
 
   // навесим обработчики на тогглеры
   progressTracking.querySelectorAll('.progress-skill-toggle').forEach(btn => {
@@ -3657,12 +3776,29 @@ function renderProgressKanban() {
 
   const laneHtml = (laneKey, laneTitle) => {
     const cards = allCards.filter(c => (c.activity.status || 'planned') === laneKey);
-    // Группировка по навыку (эпик)
-    const byEpic = {};
-    cards.forEach(c => {
-      if (!byEpic[c.skillId]) byEpic[c.skillId] = { name: c.skillName, items: [] };
-      byEpic[c.skillId].items.push(c);
-    });
+    
+    const settings = appState.sortSettings || { by: 'priority', direction: 'desc', crossSkills: true };
+    let byEpic = {};
+    
+    if (settings.crossSkills) {
+      // Сквозная сортировка: сначала сортируем все карточки
+      const sortedCards = sortTasks(cards);
+      // Затем группируем по навыку (эпик), сохраняя порядок сортировки
+      sortedCards.forEach(c => {
+        if (!byEpic[c.skillId]) byEpic[c.skillId] = { name: c.skillName, items: [] };
+        byEpic[c.skillId].items.push(c);
+      });
+    } else {
+      // Сортировка внутри каждого навыка: сначала группируем, потом сортируем
+      cards.forEach(c => {
+        if (!byEpic[c.skillId]) byEpic[c.skillId] = { name: c.skillName, items: [] };
+        byEpic[c.skillId].items.push(c);
+      });
+      // Сортируем внутри каждой группы
+      Object.keys(byEpic).forEach(skillId => {
+        byEpic[skillId].items = sortTasks(byEpic[skillId].items);
+      });
+    }
     const groupsHtml = Object.entries(byEpic).map(([skillId, grp]) => {
       const itemsHtml = grp.items.map(c => {
         const prio = c.activity.priority || '';
@@ -3764,6 +3900,70 @@ function renderProgressKanban() {
       } catch (_) {}
     });
   });
+}
+
+// Универсальная функция для сортировки задач
+function sortTasks(tasks, sortBy = null, direction = null) {
+  if (!tasks || tasks.length === 0) return tasks;
+  
+  const settings = appState.sortSettings || { by: 'priority', direction: 'desc', crossSkills: true };
+  const sortCriteria = sortBy || settings.by;
+  const sortDirection = direction || settings.direction;
+  
+  if (sortCriteria === 'none') return tasks;
+  
+  return tasks.sort((a, b) => {
+    const activityA = a.activity || a;
+    const activityB = b.activity || b;
+    
+    let compareValue = 0;
+    
+    switch (sortCriteria) {
+      case 'priority': {
+        const priorityOrder = { 'urgent': 0, 'high': 1, 'medium': 2, 'low': 3, '': 4 };
+        const aPriority = activityA.priority || '';
+        const bPriority = activityB.priority || '';
+        const aOrder = priorityOrder[aPriority] !== undefined ? priorityOrder[aPriority] : 4;
+        const bOrder = priorityOrder[bPriority] !== undefined ? priorityOrder[bPriority] : 4;
+        compareValue = aOrder - bOrder;
+        break;
+      }
+      case 'name': {
+        const aName = (activityA.name || '').toLowerCase();
+        const bName = (activityB.name || '').toLowerCase();
+        compareValue = aName.localeCompare(bName);
+        break;
+      }
+      case 'level': {
+        const aLevel = activityA.level || 0;
+        const bLevel = activityB.level || 0;
+        compareValue = aLevel - bLevel;
+        break;
+      }
+      case 'duration': {
+        const aDuration = activityA.duration || 0;
+        const bDuration = activityB.duration || 0;
+        compareValue = aDuration - bDuration;
+        break;
+      }
+      default:
+        compareValue = 0;
+    }
+    
+    // Для направления 'asc' (по возрастанию) инвертируем результат для priority, чтобы он работал логично
+    if (sortDirection === 'asc' && sortCriteria !== 'priority') {
+      return compareValue;
+    } else if (sortDirection === 'asc' && sortCriteria === 'priority') {
+      return -compareValue; // инвертируем для приоритета
+    } else {
+      return sortCriteria === 'priority' ? compareValue : -compareValue;
+    }
+  });
+}
+
+// Функция для сортировки задач по приоритету (для обратной совместимости)
+function sortByPriority(tasks) {
+  return sortTasks(tasks, 'priority', 'desc');
 }
 
 function getEpicColors(skillId) {
