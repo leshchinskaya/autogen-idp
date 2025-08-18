@@ -300,6 +300,7 @@
                             <button class="tab" id="progressTabAnalysis">Анализ развития</button>
                           </div>
                           <div class="export-buttons">
+                            <button class="btn btn--outline btn--sm" id="sortSettingsBtn">⚙️ Сортировка</button>
                             <button class="btn btn--outline btn--sm" id="generateProgressPromptBtn">🧠 Промт: автоген Итога прогресса</button>
                               <button class="btn btn--outline btn--sm" id="exportCSVProgress">📊 CSV</button>
                               <button class="btn btn--outline btn--sm" id="exportXLSXProgress">📈 XLSX</button>
@@ -308,6 +309,8 @@
                           </div>
                         </div>
                         <input type="file" id="importCSVProgressFile" accept=".csv" style="display:none;" />
+
+
 
                         <div id="progressPanelBoard" class="tab-panel active">
                           <div class="card">
@@ -704,6 +707,51 @@ Firebase	2"></textarea>
             <button class="btn btn--primary btn--sm" id="quickLoadConfirmBtn">Загрузить</button>
           </div>
           <div id="quickLoadStatus" style="margin-top:8px; font-size:12px; color:var(--color-text-secondary);"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно настроек сортировки -->
+    <div class="modal" id="sortSettingsModal" aria-hidden="true" style="display: none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="sortSettingsModalTitle">
+        <div class="modal__header">
+          <h3 id="sortSettingsModalTitle">⚙️ Настройки сортировки задач</h3>
+          <button class="btn btn--outline btn--sm" data-close-modal>Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <div class="status status--info" style="margin-bottom:12px;">Настройте порядок отображения задач в списке и на канбан доске</div>
+          
+          <div class="form-group">
+            <label class="form-label">Сортировать по:</label>
+            <select id="taskSortBy" class="form-control">
+              <option value="priority">Приоритету</option>
+              <option value="name">Названию</option>
+              <option value="level">Уровню</option>
+              <option value="duration">Длительности</option>
+              <option value="none">Без сортировки</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Направление:</label>
+            <select id="taskSortDirection" class="form-control">
+              <option value="desc">По убыванию</option>
+              <option value="asc">По возрастанию</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label class="checkbox" style="gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="taskSortCrossSkills" checked>
+              <span>Сквозная сортировка через все навыки</span>
+            </label>
+            <p class="form-hint">При включении задачи сортируются глобально через все навыки. При отключении — только внутри каждого навыка отдельно.</p>
+          </div>
+          
+          <div class="form-actions" style="justify-content:flex-end; gap:8px;">
+            <button class="btn btn--primary btn--sm" id="applySortSettings">Применить</button>
+          </div>
         </div>
       </div>
     </div>
