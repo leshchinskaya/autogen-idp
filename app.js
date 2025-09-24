@@ -1121,6 +1121,7 @@ function setupEventListeners() {
   const exportXLSXBtn = document.getElementById('exportXLSX');
   const exportCSVProgressBtn = document.getElementById('exportCSVProgress');
   const exportXLSXProgressBtn = document.getElementById('exportXLSXProgress');
+  const exportKBTasksProgressBtn = document.getElementById('exportKBTasksProgress');
   const importCSVProgressFile = document.getElementById('importCSVProgressFile');
   const cloudSyncBtn = document.getElementById('cloudSyncBtn');
   const cloudQuickSaveBtn = document.getElementById('cloudQuickSaveBtn');
@@ -1148,6 +1149,9 @@ function setupEventListeners() {
   }
   if (exportXLSXProgressBtn) {
     exportXLSXProgressBtn.addEventListener('click', exportProgressToXLSX);
+  }
+  if (exportKBTasksProgressBtn) {
+    exportKBTasksProgressBtn.addEventListener('click', exportProgressToKBTasks);
   }
   if (exportXLSXBtn) {
     exportXLSXBtn.addEventListener('click', exportToXLSX);
@@ -4936,6 +4940,41 @@ function exportProgressToXLSX() {
   link.download = `IPR_Progress_${appState.profile.fullName || 'export'}.xlsx`;
   link.click();
 }
+
+function exportProgressToKBTasks() {
+  const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
+  const kbTasks = [];
+  
+  Object.values(planData || {}).forEach(plan => {
+    const skillName = plan.name || '';
+    const currentLevel = plan.currentLevel || 1;
+    const targetLevel = plan.targetLevel || currentLevel + 1;
+    
+    (plan.activities || []).forEach(activity => {
+      // Создаем запись в формате kb_tasks.json
+      const kbTask = {
+        category: skillName, // Используем название навыка как категорию
+        skillName: skillName,
+        level: targetLevel, // Используем целевой уровень
+        goal: activity.name || '',
+        description: activity.description || '',
+        criteria: activity.expectedResult || 'Плановый результат: освоены ключевые действия по теме и задокументированы результаты.\nОжидаемый результат: демонстрация на проекте/песочнице и наличие артефактов (доки, скриншоты, отчеты).\nПроверка корректности: ревью ментора/лида; критерии приемки пройдены без замечаний.',
+        durationWeeks: activity.duration || 1
+      };
+      
+      kbTasks.push(kbTask);
+    });
+  });
+  
+  // Создаем и скачиваем JSON файл
+  const jsonContent = JSON.stringify(kbTasks, null, 2);
+  const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `kb_tasks_from_progress_${appState.profile.fullName || 'export'}.json`;
+  link.click();
+}
+
 function handleImportProgressCSV(ev) {
   const file = ev.target.files?.[0];
   if (!file) return;
