@@ -545,9 +545,12 @@ Firebase	2"></textarea>
                 </div>
             </div>
             <div class="modal__footer">
-                <div style="display:flex; gap:8px; justify-content:flex-end; width:100%;">
-                  <button class="btn btn--outline" id="editKanbanTaskBtn">Редактировать</button>
-                  <button class="btn btn--primary" id="saveKanbanTaskBtn" style="display:none;">Сохранить</button>
+                <div style="display:flex; gap:8px; justify-content:space-between; width:100%;">
+                  <button class="btn btn--outline btn--danger" id="deleteKanbanTaskBtn" title="Удалить задачу">🗑️ Удалить</button>
+                  <div style="display:flex; gap:8px;">
+                    <button class="btn btn--outline" id="editKanbanTaskBtn">Редактировать</button>
+                    <button class="btn btn--primary" id="saveKanbanTaskBtn" style="display:none;">Сохранить</button>
+                  </div>
                 </div>
             </div>
         </div>
