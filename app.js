@@ -819,8 +819,11 @@ function escapeHtml(s) {
 function linkify(text) {
   if (!text) return '';
   const safe = escapeHtml(text);
+  // Преобразуем переводы строк в <br> теги
+  const withLineBreaks = safe.replace(/\r?\n/g, '<br>');
+  // Обрабатываем ссылки
   const urlRegex = /(?:https?:\/\/|www\.)[\w\-]+(\.[\w\-]+)+[\w\-\._~:\/?#\[\]@!$&'()*+,;=%]*/gi;
-  return safe.replace(urlRegex, (m) => {
+  return withLineBreaks.replace(urlRegex, (m) => {
     const href = m.startsWith('http') ? m : `http://${m}`;
     return `<a href="${href}" target="_blank" rel="noopener noreferrer">${m}</a>`;
   });
@@ -2751,15 +2754,6 @@ function renderPlan() {
   if (!planContent) {
     console.error('Элемент planContent не найден');
     return;
-  }
-  
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
   }
 
   // Общая сводка по ИПР
