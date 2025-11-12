@@ -3153,6 +3153,16 @@ function renderProgress() {
     initSortSettings();
     window.sortSettingsInitialized = true;
   }
+  // Инициализируем модальное окно добавления задачи только один раз
+  if (!window.addNewTaskInitialized) {
+    initAddNewTaskModal();
+    window.addNewTaskInitialized = true;
+  }
+  // Инициализируем модальное окно меню только один раз
+  if (!window.progressMenuInitialized) {
+    initProgressMenuModal();
+    window.progressMenuInitialized = true;
+  }
   if (typeof Chart !== 'undefined') {
     renderProgressCharts();
   }
@@ -3252,6 +3262,439 @@ function initSortSettingsButton() {
       window.openSortSettingsModal();
     }
   };
+}
+
+// Инициализация модального окна добавления новой задачи
+function initAddNewTaskModal() {
+  const modal = document.getElementById('addNewTaskModal');
+  const addNewTaskBtn = document.getElementById('addNewTaskBtn');
+  const saveNewTaskBtn = document.getElementById('saveNewTaskBtn');
+  const closeButtons = modal?.querySelectorAll('[data-close-modal]');
+  
+  if (!modal || !addNewTaskBtn || !saveNewTaskBtn) return;
+
+  // Функция открытия модального окна
+  const openModal = () => {
+    // Заполняем список навыков
+    populateSkillsDropdown();
+    // Очищаем форму
+    clearNewTaskForm();
+    // Инициализируем поиск по навыкам
+    initSkillSearch();
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+  };
+
+  // Функция закрытия модального окна
+  const closeModal = () => {
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  };
+
+  // Обработчики событий
+  addNewTaskBtn.addEventListener('click', openModal);
+  saveNewTaskBtn.addEventListener('click', saveNewTask);
+  
+  closeButtons?.forEach(btn => {
+    btn.addEventListener('click', closeModal);
+  });
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal || e.target.hasAttribute('data-close-modal')) {
+      closeModal();
+    }
+  });
+}
+
+// Заполнение выпадающего списка навыков
+function populateSkillsDropdown() {
+  const skillSelect = document.getElementById('newTaskSkill');
+  if (!skillSelect) return;
+  
+  // Очищаем список
+  skillSelect.innerHTML = '<option value="">Выберите навык</option>';
+  
+  // Создаем группы для организации навыков
+  const currentSkillsGroup = document.createElement('optgroup');
+  currentSkillsGroup.label = '📋 Текущие навыки в плане';
+  
+  const allSkillsGroup = document.createElement('optgroup');
+  allSkillsGroup.label = '📚 Все доступные навыки';
+  
+  const skillsSet = new Set();
+  let hasCurrentSkills = false;
+  
+  // Добавляем навыки из прогресса
+  Object.entries(appState.progress || {}).forEach(([skillId, skill]) => {
+    if (!skillsSet.has(skillId)) {
+      const option = document.createElement('option');
+      option.value = skillId;
+      option.textContent = skill.name || skillId;
+      currentSkillsGroup.appendChild(option);
+      skillsSet.add(skillId);
+      hasCurrentSkills = true;
+    }
+  });
+  
+  // Добавляем навыки из плана развития, если их еще нет в прогрессе
+  Object.entries(appState.developmentPlan || {}).forEach(([skillId, skill]) => {
+    if (!skillsSet.has(skillId)) {
+      const option = document.createElement('option');
+      option.value = skillId;
+      option.textContent = skill.name || skillId;
+      currentSkillsGroup.appendChild(option);
+      skillsSet.add(skillId);
+      hasCurrentSkills = true;
+    }
+  });
+  
+  // Добавляем группу текущих навыков, если есть
+  if (hasCurrentSkills) {
+    skillSelect.appendChild(currentSkillsGroup);
+  }
+  
+  // Собираем все навыки из каталога по категориям
+  const categorizedSkills = [];
+  Object.entries(skillsData.skills || {}).forEach(([categoryName, skills]) => {
+    if (skills && skills.length > 0) {
+      const categoryGroup = document.createElement('optgroup');
+      categoryGroup.label = categoryName;
+      
+      let hasSkillsInCategory = false;
+      skills.forEach(skill => {
+        if (!skillsSet.has(skill.id)) {
+          const option = document.createElement('option');
+          option.value = skill.id;
+          option.textContent = skill.name;
+          categoryGroup.appendChild(option);
+          hasSkillsInCategory = true;
+        }
+      });
+      
+      if (hasSkillsInCategory) {
+        categorizedSkills.push(categoryGroup);
+      }
+    }
+  });
+  
+  // Добавляем категории навыков
+  categorizedSkills.forEach(categoryGroup => {
+    skillSelect.appendChild(categoryGroup);
+  });
+  
+  // Добавляем опцию для создания нового навыка
+  const newSkillOption = document.createElement('option');
+  newSkillOption.value = 'new_skill';
+  newSkillOption.textContent = '➕ Создать новый навык';
+  newSkillOption.style.fontWeight = 'bold';
+  newSkillOption.style.color = '#007bff';
+  skillSelect.appendChild(newSkillOption);
+}
+
+// Инициализация поиска по навыкам
+function initSkillSearch() {
+  const searchInput = document.getElementById('newTaskSkillSearch');
+  const skillSelect = document.getElementById('newTaskSkill');
+  
+  if (!searchInput || !skillSelect) return;
+  
+  // Сохраняем все опции для фильтрации
+  const allOptions = Array.from(skillSelect.querySelectorAll('option, optgroup'));
+  
+  searchInput.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase().trim();
+    
+    if (!query) {
+      // Показываем все опции
+      allOptions.forEach(element => {
+        element.style.display = '';
+      });
+      return;
+    }
+    
+    // Фильтруем опции
+    allOptions.forEach(element => {
+      if (element.tagName === 'OPTGROUP') {
+        // Для групп проверяем, есть ли видимые дочерние элементы
+        const visibleChildren = Array.from(element.querySelectorAll('option')).filter(option => {
+          const matches = option.textContent.toLowerCase().includes(query);
+          option.style.display = matches ? '' : 'none';
+          return matches;
+        });
+        element.style.display = visibleChildren.length > 0 ? '' : 'none';
+      } else if (element.tagName === 'OPTION') {
+        const matches = element.textContent.toLowerCase().includes(query);
+        element.style.display = matches ? '' : 'none';
+      }
+    });
+  });
+  
+  // Очищаем поиск при выборе навыка
+  skillSelect.addEventListener('change', () => {
+    if (skillSelect.value) {
+      searchInput.value = '';
+      // Показываем все опции
+      allOptions.forEach(element => {
+        element.style.display = '';
+      });
+    }
+  });
+  
+  // Двойной клик для быстрого выбора и закрытия модального окна
+  skillSelect.addEventListener('dblclick', () => {
+    if (skillSelect.value && skillSelect.value !== 'new_skill') {
+      // Заполняем название задачи названием навыка, если оно пустое
+      const titleField = document.getElementById('newTaskTitle');
+      if (titleField && !titleField.value.trim()) {
+        const selectedOption = skillSelect.options[skillSelect.selectedIndex];
+        if (selectedOption) {
+          titleField.value = `Изучить ${selectedOption.textContent}`;
+        }
+      }
+    }
+  });
+}
+
+// Очистка формы добавления задачи
+function clearNewTaskForm() {
+  const fields = [
+    'newTaskTitle',
+    'newTaskDescription', 
+    'newTaskExpected',
+    'newTaskSkill',
+    'newTaskSkillSearch',
+    'newTaskPriority'
+  ];
+  
+  fields.forEach(fieldId => {
+    const field = document.getElementById(fieldId);
+    if (field) field.value = '';
+  });
+  
+  const durationField = document.getElementById('newTaskDuration');
+  if (durationField) durationField.value = '2';
+}
+
+// Сохранение новой задачи
+function saveNewTask() {
+  const titleField = document.getElementById('newTaskTitle');
+  const descField = document.getElementById('newTaskDescription');
+  const expectedField = document.getElementById('newTaskExpected');
+  const skillField = document.getElementById('newTaskSkill');
+  const priorityField = document.getElementById('newTaskPriority');
+  const durationField = document.getElementById('newTaskDuration');
+  
+  if (!titleField || !skillField) return;
+  
+  const title = titleField.value.trim();
+  let skillId = skillField.value;
+  
+  if (!title || !skillId) {
+    alert('Пожалуйста, заполните название задачи и выберите навык');
+    return;
+  }
+  
+  let newSkillName = null;
+  
+  // Если выбрано создание нового навыка
+  if (skillId === 'new_skill') {
+    newSkillName = prompt('Введите название нового навыка:');
+    if (!newSkillName || !newSkillName.trim()) {
+      alert('Название навыка не может быть пустым');
+      return;
+    }
+    skillId = slugify(newSkillName.trim());
+    
+    // Проверяем, что такого навыка еще нет
+    if (appState.progress[skillId]) {
+      alert('Навык с таким названием уже существует');
+      return;
+    }
+  }
+  
+  // Определяем уровень для новой задачи
+  let taskLevel = 1;
+  const existingProgress = appState.progress[skillId];
+  const existingPlan = appState.developmentPlan[skillId];
+  
+  if (existingProgress && existingProgress.currentLevel) {
+    taskLevel = Math.max(1, existingProgress.currentLevel + 1);
+  } else if (existingPlan && existingPlan.currentLevel) {
+    taskLevel = Math.max(1, existingPlan.currentLevel + 1);
+  }
+
+  // Создаем новую задачу
+  const newTask = {
+    id: `${skillId}_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+    name: title,
+    description: descField?.value.trim() || '',
+    expectedResult: expectedField?.value.trim() || '',
+    priority: priorityField?.value || '',
+    level: taskLevel,
+    duration: parseInt(durationField?.value) || 2,
+    status: 'planned',
+    completed: false,
+    comment: '',
+    relatedSkills: [],
+    skillWeights: undefined
+  };
+  
+  // Добавляем задачу к выбранному навыку
+  if (!appState.progress[skillId]) {
+    // Определяем имя навыка
+    let skillName = skillId;
+    if (newSkillName) {
+      // Для нового навыка используем введенное пользователем имя
+      skillName = newSkillName.trim();
+    } else {
+      // Для существующего навыка ищем имя в прогрессе, плане или каталоге
+      const existingSkill = appState.progress[skillId] || appState.developmentPlan[skillId];
+      if (existingSkill && existingSkill.name) {
+        skillName = existingSkill.name;
+      } else {
+        // Ищем в каталоге навыков
+        const catalogSkill = findSkillById(skillId);
+        if (catalogSkill && catalogSkill.name) {
+          skillName = catalogSkill.name;
+        }
+      }
+    }
+    
+    appState.progress[skillId] = {
+      name: skillName,
+      currentLevel: 0,
+      targetLevel: Math.max(1, taskLevel),
+      activities: [],
+      totalDuration: 0
+    };
+  }
+  
+  if (!appState.progress[skillId].activities) {
+    appState.progress[skillId].activities = [];
+  }
+  
+  appState.progress[skillId].activities.push(newTask);
+  
+  // Обновляем общую длительность навыка
+  appState.progress[skillId].totalDuration = appState.progress[skillId].activities.reduce((sum, a) => sum + (a.duration || 0), 0);
+  
+  // Сохраняем и обновляем интерфейс
+  saveToLocalStorage();
+  renderProgress();
+  
+  // Закрываем модальное окно
+  const modal = document.getElementById('addNewTaskModal');
+  if (modal) {
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  
+  // Автосохранение в облако
+  try {
+    autoCloudSaveDebounced('add-new-task');
+  } catch (_) {}
+  
+  alert('Задача успешно добавлена!');
+}
+
+// Инициализация модального окна меню прогресса
+function initProgressMenuModal() {
+  const modal = document.getElementById('progressMenuModal');
+  const progressMenuBtn = document.getElementById('progressMenuBtn');
+  const closeButtons = modal?.querySelectorAll('[data-close-modal]');
+  
+  if (!modal || !progressMenuBtn) return;
+
+  // Функция открытия модального окна
+  const openModal = () => {
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+  };
+
+  // Функция закрытия модального окна
+  const closeModal = () => {
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  };
+
+  // Обработчики событий
+  progressMenuBtn.addEventListener('click', openModal);
+  
+  closeButtons?.forEach(btn => {
+    btn.addEventListener('click', closeModal);
+  });
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal || e.target.hasAttribute('data-close-modal')) {
+      closeModal();
+    }
+  });
+
+  // Перенаправление кликов на кнопки меню к оригинальным обработчикам
+  setupMenuButtonRedirects(closeModal);
+}
+
+// Настройка перенаправления кликов кнопок меню
+function setupMenuButtonRedirects(closeModal) {
+  // Промт для анализа прогресса
+  const menuGeneratePromptBtn = document.getElementById('menuGenerateProgressPromptBtn');
+  const originalGeneratePromptBtn = document.getElementById('generateProgressPromptBtn');
+  if (menuGeneratePromptBtn && originalGeneratePromptBtn) {
+    menuGeneratePromptBtn.addEventListener('click', () => {
+      closeModal();
+      originalGeneratePromptBtn.click();
+    });
+  }
+
+  // Экспорт в CSV
+  const menuExportCSVBtn = document.getElementById('menuExportCSVProgress');
+  const originalExportCSVBtn = document.getElementById('exportCSVProgress');
+  if (menuExportCSVBtn && originalExportCSVBtn) {
+    menuExportCSVBtn.addEventListener('click', () => {
+      closeModal();
+      originalExportCSVBtn.click();
+    });
+  }
+
+  // Экспорт в XLSX
+  const menuExportXLSXBtn = document.getElementById('menuExportXLSXProgress');
+  const originalExportXLSXBtn = document.getElementById('exportXLSXProgress');
+  if (menuExportXLSXBtn && originalExportXLSXBtn) {
+    menuExportXLSXBtn.addEventListener('click', () => {
+      closeModal();
+      originalExportXLSXBtn.click();
+    });
+  }
+
+  // Экспорт Tasks JSON
+  const menuExportKBTasksBtn = document.getElementById('menuExportKBTasksProgress');
+  const originalExportKBTasksBtn = document.getElementById('exportKBTasksProgress');
+  if (menuExportKBTasksBtn && originalExportKBTasksBtn) {
+    menuExportKBTasksBtn.addEventListener('click', () => {
+      closeModal();
+      originalExportKBTasksBtn.click();
+    });
+  }
+
+  // Облачная синхронизация
+  const menuCloudSyncBtn = document.getElementById('menuCloudSyncBtn');
+  const originalCloudSyncBtn = document.getElementById('cloudSyncBtn');
+  if (menuCloudSyncBtn && originalCloudSyncBtn) {
+    menuCloudSyncBtn.addEventListener('click', () => {
+      closeModal();
+      originalCloudSyncBtn.click();
+    });
+  }
+
+  // Импорт CSV
+  const menuImportCSVBtn = document.getElementById('menuImportCSVProgress');
+  const importCSVFile = document.getElementById('importCSVProgressFile');
+  if (menuImportCSVBtn && importCSVFile) {
+    menuImportCSVBtn.addEventListener('click', () => {
+      closeModal();
+      importCSVFile.click();
+    });
+  }
 }
 
 // Отдельный блок: агрегированный список связанных навыков, не влияющий на графики
