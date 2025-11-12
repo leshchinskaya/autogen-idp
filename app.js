@@ -5299,13 +5299,14 @@ function exportToCSV() {
 }
 
 function exportToXLSX() {
-  const headers = ['Навык', 'Уровень', 'Цель задачи', 'Описание', 'Длительность', 'Ожидаемый результат', 'Комментарии', 'Приоритет'];
+  const headers = ['Навык', 'Уровень', 'Цель задачи', 'Описание', 'Длительность', 'Ожидаемый результат', 'Комментарии', 'Приоритет', 'Тип', 'Подзадача'];
   const rows = [headers];
   const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
   Object.values(planData || {}).forEach(plan => {
     const skillName = plan.name || '';
     const level = `${plan.currentLevel || 0} → ${plan.targetLevel || 0}`;
     (plan.activities || []).forEach(activity => {
+      // Добавляем основную задачу
       rows.push([
         skillName,
         level,
@@ -5314,8 +5315,28 @@ function exportToXLSX() {
         Number(activity.duration || 0),
         String(activity.expectedResult || ''),
         String(activity.comment || ''),
-        String(activity.priority || '')
+        String(activity.priority || ''),
+        'Основная задача',
+        ''
       ]);
+      
+      // Добавляем подзадачи, если они есть
+      if (Array.isArray(activity.subtasks) && activity.subtasks.length > 0) {
+        activity.subtasks.forEach((subtask, index) => {
+          rows.push([
+            '', // Навык - пустой для подзадач
+            '', // Уровень - пустой для подзадач
+            String(subtask.title || `Подзадача ${index + 1}`),
+            String(subtask.description || ''),
+            '', // Длительность - пустая для подзадач
+            String(subtask.expectedResult || ''),
+            '', // Комментарии - пустые для подзадач
+            '', // Приоритет - пустой для подзадач
+            'Подзадача',
+            subtask.done ? 'Выполнено' : 'Не выполнено'
+          ]);
+        });
+      }
     });
   });
   const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -5351,7 +5372,7 @@ function exportProgressToCSV() {
 }
 
 function exportProgressToXLSX() {
-  const headers = ['Навык', 'Текущий уровень', 'Целевой уровень', 'Задача', 'Длительность (нед.)', 'Статус', 'Описание', 'Ожидаемый результат', 'Комментарий', 'Приоритет'];
+  const headers = ['Навык', 'Текущий уровень', 'Целевой уровень', 'Задача', 'Длительность (нед.)', 'Статус', 'Описание', 'Ожидаемый результат', 'Комментарий', 'Приоритет', 'Тип', 'Статус подзадачи'];
   const rows = [headers];
   const planData = appState.progress && Object.keys(appState.progress).length > 0 ? appState.progress : appState.developmentPlan;
   Object.values(planData || {}).forEach(plan => {
@@ -5360,6 +5381,8 @@ function exportProgressToXLSX() {
     const target = plan.targetLevel ?? '';
     (plan.activities || []).forEach(activity => {
       const status = activity.status || (activity.completed ? 'done' : 'planned');
+      
+      // Добавляем основную задачу
       rows.push([
         skillName,
         current,
@@ -5370,8 +5393,30 @@ function exportProgressToXLSX() {
         String(activity.description || ''),
         String(activity.expectedResult || ''),
         String(activity.comment || ''),
-        String(activity.priority || '')
+        String(activity.priority || ''),
+        'Основная задача',
+        ''
       ]);
+      
+      // Добавляем подзадачи, если они есть
+      if (Array.isArray(activity.subtasks) && activity.subtasks.length > 0) {
+        activity.subtasks.forEach((subtask, index) => {
+          rows.push([
+            '', // Навык - пустой для подзадач
+            '', // Текущий уровень - пустой для подзадач
+            '', // Целевой уровень - пустой для подзадач
+            String(subtask.title || `Подзадача ${index + 1}`),
+            '', // Длительность - пустая для подзадач
+            '', // Статус основной задачи - пустой для подзадач
+            String(subtask.description || ''),
+            String(subtask.expectedResult || ''),
+            '', // Комментарий - пустой для подзадач
+            '', // Приоритет - пустой для подзадач
+            'Подзадача',
+            subtask.done ? 'Выполнено' : 'Не выполнено'
+          ]);
+        });
+      }
     });
   });
   const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
