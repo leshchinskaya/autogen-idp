@@ -300,16 +300,22 @@
                             <button class="tab" id="progressTabAnalysis">Анализ развития</button>
                           </div>
                           <div class="export-buttons">
+                            <button class="btn btn--primary btn--sm" id="addNewTaskBtn">➕ Добавить задачу</button>
                             <button class="btn btn--outline btn--sm" id="sortSettingsBtn">⚙️ Сортировка</button>
-                            <button class="btn btn--outline btn--sm" id="generateProgressPromptBtn">🧠 Промт: автоген Итога прогресса</button>
-                              <button class="btn btn--outline btn--sm" id="exportCSVProgress">📊 CSV</button>
-                              <button class="btn btn--outline btn--sm" id="exportXLSXProgress">📈 XLSX</button>
-                              <button class="btn btn--outline btn--sm" id="exportKBTasksProgress">📝 Tasks JSON</button>
-                             <button class="btn btn--outline btn--sm" id="cloudQuickSaveBtn">💾 Save</button>
-                            <button class="btn btn--outline btn--sm" id="cloudSyncBtn">☁️ Sheets</button>
+                            <button class="btn btn--outline btn--sm" id="cloudQuickSaveBtn">💾 Save</button>
+                            <button class="btn btn--outline btn--sm" id="progressMenuBtn">☰ Меню</button>
                           </div>
                         </div>
                         <input type="file" id="importCSVProgressFile" accept=".csv" style="display:none;" />
+                        
+                        <!-- Скрытые оригинальные кнопки для сохранения обработчиков событий -->
+                        <div style="display:none;">
+                          <button id="generateProgressPromptBtn"></button>
+                          <button id="exportCSVProgress"></button>
+                          <button id="exportXLSXProgress"></button>
+                          <button id="exportKBTasksProgress"></button>
+                          <button id="cloudSyncBtn"></button>
+                        </div>
 
 
 
@@ -752,6 +758,108 @@ Firebase	2"></textarea>
           
           <div class="form-actions" style="justify-content:flex-end; gap:8px;">
             <button class="btn btn--primary btn--sm" id="applySortSettings">Применить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add New Task Modal -->
+    <div class="modal" id="addNewTaskModal" aria-hidden="true" style="display: none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="addNewTaskModalTitle">
+        <div class="modal__header">
+          <h3 id="addNewTaskModalTitle">➕ Добавить новую задачу</h3>
+          <button class="btn btn--outline btn--sm" data-close-modal>Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <div class="status status--info" style="margin-bottom:12px;">Создайте новую задачу для развития навыков</div>
+          
+          <div class="form-group">
+            <label class="form-label">Название задачи *</label>
+            <input type="text" id="newTaskTitle" class="form-control" placeholder="Введите название задачи" required>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Описание</label>
+            <textarea id="newTaskDescription" class="form-control" rows="4" placeholder="Опишите что нужно сделать..."></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Плановый результат</label>
+            <textarea id="newTaskExpected" class="form-control" rows="3" placeholder="Какой результат ожидается..."></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Навык *</label>
+            <input type="text" id="newTaskSkillSearch" class="form-control" placeholder="Начните вводить название навыка для поиска..." style="margin-bottom: 8px;">
+            <select id="newTaskSkill" class="form-control" required size="8" style="min-height: 200px;">
+              <option value="">Выберите навык</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Приоритет</label>
+            <select id="newTaskPriority" class="form-control">
+              <option value="">Нет приоритета</option>
+              <option value="urgent">Срочный</option>
+              <option value="high">Высокий</option>
+              <option value="medium">Средний</option>
+              <option value="low">Низкий</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Длительность (недель)</label>
+            <input type="number" id="newTaskDuration" class="form-control" min="1" max="52" value="2">
+          </div>
+          
+          <div class="form-actions" style="justify-content:flex-end; gap:8px;">
+            <button class="btn btn--outline btn--sm" data-close-modal>Отмена</button>
+            <button class="btn btn--primary btn--sm" id="saveNewTaskBtn">Создать задачу</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress Menu Modal -->
+    <div class="modal" id="progressMenuModal" aria-hidden="true" style="display: none;">
+      <div class="modal__overlay" data-close-modal></div>
+      <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="progressMenuModalTitle">
+        <div class="modal__header">
+          <h3 id="progressMenuModalTitle">☰ Меню прогресса</h3>
+          <button class="btn btn--outline btn--sm" data-close-modal>Закрыть</button>
+        </div>
+        <div class="modal__body">
+          <div class="status status--info" style="margin-bottom:16px;">Дополнительные функции для работы с прогрессом</div>
+          
+          <div class="menu-section">
+            <h4 style="margin: 0 0 12px 0; color: var(--color-text-secondary); font-size: 14px;">📊 Анализ и отчеты</h4>
+            <div class="menu-buttons" style="display: grid; gap: 8px; margin-bottom: 20px;">
+              <button class="btn btn--outline btn--sm menu-btn" id="menuGenerateProgressPromptBtn" style="justify-content: flex-start;">🧠 Промт: автоген Итога прогресса</button>
+            </div>
+          </div>
+          
+          <div class="menu-section">
+            <h4 style="margin: 0 0 12px 0; color: var(--color-text-secondary); font-size: 14px;">📤 Экспорт данных</h4>
+            <div class="menu-buttons" style="display: grid; gap: 8px; margin-bottom: 20px;">
+              <button class="btn btn--outline btn--sm menu-btn" id="menuExportCSVProgress" style="justify-content: flex-start;">📊 Экспорт в CSV</button>
+              <button class="btn btn--outline btn--sm menu-btn" id="menuExportXLSXProgress" style="justify-content: flex-start;">📈 Экспорт в XLSX</button>
+              <button class="btn btn--outline btn--sm menu-btn" id="menuExportKBTasksProgress" style="justify-content: flex-start;">📝 Экспорт Tasks JSON</button>
+            </div>
+          </div>
+          
+          <div class="menu-section">
+            <h4 style="margin: 0 0 12px 0; color: var(--color-text-secondary); font-size: 14px;">☁️ Облачная синхронизация</h4>
+            <div class="menu-buttons" style="display: grid; gap: 8px; margin-bottom: 20px;">
+              <button class="btn btn--outline btn--sm menu-btn" id="menuCloudSyncBtn" style="justify-content: flex-start;">☁️ Открыть Google Sheets</button>
+            </div>
+          </div>
+          
+          <div class="menu-section">
+            <h4 style="margin: 0 0 12px 0; color: var(--color-text-secondary); font-size: 14px;">📥 Импорт данных</h4>
+            <div class="menu-buttons" style="display: grid; gap: 8px;">
+              <button class="btn btn--outline btn--sm menu-btn" id="menuImportCSVProgress" style="justify-content: flex-start;">📥 Импорт из CSV</button>
+            </div>
           </div>
         </div>
       </div>
