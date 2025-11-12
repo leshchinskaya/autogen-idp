@@ -449,6 +449,17 @@ pre code {
   background: var(--color-secondary);
 }
 
+.btn--danger {
+  background: transparent;
+  border: 1px solid #dc3545;
+  color: #dc3545;
+}
+
+.btn--danger:hover {
+  background: #dc3545;
+  color: white;
+}
+
 .btn--sm {
   padding: var(--space-4) var(--space-12);
   font-size: var(--font-size-sm);

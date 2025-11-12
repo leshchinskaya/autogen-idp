@@ -1715,6 +1715,7 @@ function setupEventListeners() {
   const closeKanbanBtn = document.getElementById('closeKanbanTaskModal');
   const saveKanbanBtn = document.getElementById('saveKanbanTaskBtn');
   const editKanbanBtn = document.getElementById('editKanbanTaskBtn');
+  const deleteKanbanBtn = document.getElementById('deleteKanbanTaskBtn');
   if (kanbanModal && closeKanbanBtn && saveKanbanBtn) {
     closeKanbanBtn.addEventListener('click', closeKanbanTaskModal);
     kanbanModal.addEventListener('click', (e) => {
@@ -1731,6 +1732,7 @@ function setupEventListeners() {
     if (e && expPrev) e.addEventListener('input', () => (expPrev.innerHTML = linkifyLinksOnly(e.value)));
     if (c && comPrev) c.addEventListener('input', () => (comPrev.innerHTML = linkifyLinksOnly(c.value)));
     if (editKanbanBtn) editKanbanBtn.addEventListener('click', () => switchKanbanTaskMode('edit'));
+    if (deleteKanbanBtn) deleteKanbanBtn.addEventListener('click', deleteKanbanTaskModal);
   }
 }
 
@@ -4177,7 +4179,8 @@ function renderProgressTracking() {
                   })() : ''}
               <div class=\"activity-actions\" style=\"margin:6px 0 0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;\">
                     <button class=\"btn btn--outline btn--sm\" onclick=\"openTaskEdit('${skillId}', ${index})\">Редактировать</button>
-                    <button class=\"btn btn--outline btn--sm\" style=\"margin-left:6px;\" onclick=\"progressParseDescToSubtasks('${skillId}', ${index})\">Сделать из описания подзадачи</button>
+                    <button class=\"btn btn--outline btn--sm\" onclick=\"progressParseDescToSubtasks('${skillId}', ${index})\">Сделать из описания подзадачи</button>
+                    <button class=\"btn btn--outline btn--sm btn--danger\" onclick=\"deleteProgressTask('${skillId}', ${index})\" title=\"Удалить задачу\">🗑️ Удалить</button>
                   </div>
                   
                   <textarea class="form-control activity-comment" 
@@ -4261,6 +4264,35 @@ window.progressParseDescToSubtasks = function(skillId, index) {
   recomputeAllProgress();
   renderProgress();
   try { autoCloudSaveDebounced('parse-desc-subtasks-list'); } catch (_) {}
+};
+
+// Удалить задачу из прогресса
+window.deleteProgressTask = function(skillId, index) {
+  const skill = appState.progress?.[skillId];
+  if (!skill || !skill.activities || !skill.activities[index]) return;
+  
+  const taskName = skill.activities[index].name || 'задачу';
+  if (!confirm(`Вы уверены, что хотите удалить "${taskName}"? Это действие нельзя отменить.`)) {
+    return;
+  }
+  
+  // Удаляем задачу из массива
+  skill.activities.splice(index, 1);
+  
+  // Пересчитываем прогресс всех навыков
+  recomputeAllProgress();
+  
+  // Сохраняем изменения
+  saveToLocalStorage();
+  
+  // Обновляем отображение
+  recomputeAllProgress();
+  renderProgress();
+  
+  // Автосохранение в облако
+  try { autoCloudSaveDebounced('delete-progress-task'); } catch (_) {}
+  
+  console.log(`Удалена задача "${taskName}" из навыка ${skillId}`);
 };
 
 function renderProgressKanban() {
@@ -4828,6 +4860,22 @@ function closeKanbanTaskModal() {
   if (!modal) return;
   modal.style.display = 'none';
   modal.setAttribute('aria-hidden', 'true');
+}
+
+function deleteKanbanTaskModal() {
+  const modal = document.getElementById('kanbanTaskModal');
+  if (!modal) return;
+  
+  const skillId = modal.dataset.skillId;
+  const index = parseInt(modal.dataset.index);
+  
+  if (!skillId || isNaN(index)) return;
+  
+  // Закрываем модальное окно перед удалением
+  closeKanbanTaskModal();
+  
+  // Вызываем функцию удаления задачи
+  deleteProgressTask(skillId, index);
 }
 
 function switchKanbanTaskMode(mode) {
